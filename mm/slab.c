@@ -50,7 +50,7 @@
  * The head array is strictly LIFO and should improve the cache hit rates.
  * On SMP, it additionally reduces the spinlock operations.
  *
- * The c_cpuarray may not be read with enabled local interrupts - 
+ * The c_cpuarray may not be read with enabled local interrupts -
  * it's changed with a smp_call_function().
  *
  * SMP synchronization:
@@ -109,6 +109,7 @@
  * FORCED_DEBUG	- 1 enables SLAB_RED_ZONE and SLAB_POISON (if possible)
  */
 
+/* 开启SLAB 调试时全部开启 */
 #ifdef CONFIG_DEBUG_SLAB
 #define	DEBUG		1
 #define	STATS		1
@@ -195,6 +196,9 @@
 /* Max number of objs-per-slab for caches which use off-slab slabs.
  * Needed to avoid a possible looping condition in cache_grow().
  */
+/*
+ * off-slab 支持的最大object 数量.
+ */
 static unsigned long offslab_limit;
 
 /*
@@ -247,6 +251,14 @@ struct slab_rcu {
  * footprint.
  *
  */
+/*
+ * struct array_cache - 
+ *
+ * @avail: 可用的obj 数量
+ * @limit: 最大的obj 数量
+ * @batchcount: 一次性获取的obj 数量
+ * @touched: 最近是否从该slab 申请过内存
+ */
 struct array_cache {
 	unsigned int avail;
 	unsigned int limit;
@@ -269,6 +281,9 @@ struct arraycache_init {
  * NUMA: The spinlock could be moved from the kmem_cache_t
  * into this structure, too. Figure out what causes
  * fewer cross-node spinlock operations.
+ */
+/*
+ * @next_reap: 只有在该时间之后才能回收内存
  */
 struct kmem_list3 {
 	struct list_head	slabs_partial;	/* partial list first, better asm code */
@@ -298,7 +313,17 @@ struct kmem_list3 {
  *
  * manages a cache.
  */
-	
+/*
+ * kmem_cache_s - 管理内核缓存
+ *
+ * @objsize: object 大小
+ *
+ * @next: 添加到cache_chain 链表
+ *
+ * @colour: 
+ * @colour_off: 
+ * @reallen: object 大小仅做了BYTES_PER_WORD 对齐.
+ */
 struct kmem_cache_s {
 /* 1) per-cpu data, touched during every alloc/free */
 	struct array_cache	*array[NR_CPUS];
@@ -358,11 +383,12 @@ struct kmem_cache_s {
 #endif
 };
 
+/* 意思是slab 和 object 分别存到不同的page */
 #define CFLGS_OFF_SLAB		(0x80000000UL)
 #define	OFF_SLAB(x)	((x)->flags & CFLGS_OFF_SLAB)
 
 #define BATCHREFILL_LIMIT	16
-/* Optimization question: fewer reaps means less 
+/* Optimization question: fewer reaps means less
  * probability for unnessary cpucache drain/refill cycles.
  *
  * OTHO the cpuarrays can contain lots of objects,
@@ -614,6 +640,10 @@ kmem_cache_t *kmem_find_general_cachep(size_t size, int gfpflags)
 EXPORT_SYMBOL(kmem_find_general_cachep);
 
 /* Cal the num objs, wastage, and bytes left over for a given slab size. */
+/*
+ * @left_over: slab 中剩余字节数
+ * @num: 每个slab 中object个数
+ */
 static void cache_estimate(unsigned long gfporder, size_t size, size_t align,
 		 int flags, size_t *left_over, unsigned int *num)
 {
@@ -763,11 +793,15 @@ void __init kmem_cache_init(void)
 	 * Fragmentation resistance on low memory - only use bigger
 	 * page orders on machines with more than 32MB of memory.
 	 */
+	/*
+	 * 根据内存总量设置 slab_break_gfp_order.
+	 * 该值会限制slab申请页面的最大数量.
+	 */
 	if (num_physpages > (32 << 20) >> PAGE_SHIFT)
 		slab_break_gfp_order = BREAK_GFP_ORDER_HI;
 
-	
-	/* Bootstrap is tricky, because several objects are allocated
+	/*
+	 * Bootstrap is tricky, because several objects are allocated
 	 * from caches that do not exist yet:
 	 * 1) initialize the cache_cache cache: it contains the kmem_cache_t
 	 *    structures of all caches, except cache_cache itself: cache_cache
@@ -806,6 +840,7 @@ void __init kmem_cache_init(void)
 	sizes = malloc_sizes;
 	names = cache_names;
 
+	/* 创建所有的kmalloc cache */
 	while (sizes->cs_size != ULONG_MAX) {
 		/* For performance, all the general caches are L1 aligned.
 		 * This should be particularly beneficial on SMP boxes, as it
@@ -833,14 +868,14 @@ void __init kmem_cache_init(void)
 	/* 4) Replace the bootstrap head arrays */
 	{
 		void * ptr;
-		
+
 		ptr = kmalloc(sizeof(struct arraycache_init), GFP_KERNEL);
 		local_irq_disable();
 		BUG_ON(ac_data(&cache_cache) != &initarray_cache.cache);
 		memcpy(ptr, ac_data(&cache_cache), sizeof(struct arraycache_init));
 		cache_cache.array[smp_processor_id()] = ptr;
 		local_irq_enable();
-	
+
 		ptr = kmalloc(sizeof(struct arraycache_init), GFP_KERNEL);
 		local_irq_disable();
 		BUG_ON(ac_data(malloc_sizes[0].cs_cachep) != &initarray_generic.cache);
@@ -853,9 +888,11 @@ void __init kmem_cache_init(void)
 	/* 5) resize the head arrays to their final sizes */
 	{
 		kmem_cache_t *cachep;
+		/* 信号量获取 */
 		down(&cache_chain_sem);
 		list_for_each_entry(cachep, &cache_chain, next)
 			enable_cpucache(cachep);
+		/* 信号量释放 */
 		up(&cache_chain_sem);
 	}
 
@@ -866,7 +903,7 @@ void __init kmem_cache_init(void)
 	 * that initializes ac_data for all new cpus
 	 */
 	register_cpu_notifier(&cpucache_notifier);
-	
+
 
 	/* The reap timers are started later, with a module init call:
 	 * That part of the kernel is not yet operational.
@@ -877,7 +914,7 @@ static int __init cpucache_init(void)
 {
 	int cpu;
 
-	/* 
+	/*
 	 * Register the timers that return unneeded
 	 * pages to gfp.
 	 */
@@ -943,7 +980,7 @@ static void kmem_freepages(kmem_cache_t *cachep, void *addr)
 	if (current->reclaim_state)
 		current->reclaim_state->reclaimed_slab += nr_freed;
 	free_pages((unsigned long)addr, cachep->gfporder);
-	if (cachep->flags & SLAB_RECLAIM_ACCOUNT) 
+	if (cachep->flags & SLAB_RECLAIM_ACCOUNT)
 		atomic_sub(1<<cachep->gfporder, &slab_reclaim_pages);
 }
 
@@ -1178,9 +1215,9 @@ static void slab_destroy (kmem_cache_t *cachep, struct slab *slabp)
  * and the @dtor is run before the pages are handed back.
  *
  * @name must be valid until the cache is destroyed. This implies that
- * the module calling this has to destroy the cache before getting 
+ * the module calling this has to destroy the cache before getting
  * unloaded.
- * 
+ *
  * The flags are
  *
  * %SLAB_POISON - Poison the slab with a known test pattern (a5a5a5a5)
@@ -1206,6 +1243,13 @@ kmem_cache_create (const char *name, size_t size, size_t align,
 
 	/*
 	 * Sanity checks... these are all serious usage bugs.
+	 */
+	/*
+	 * 安全检查.
+	 * 1. 名字不能为空
+	 * 2. 不能在中断中调用
+	 * 3. size 大小限制
+	 * 4. 析构函数必须依赖于构造函数
 	 */
 	if ((!name) ||
 		in_interrupt() ||
@@ -1267,6 +1311,10 @@ kmem_cache_create (const char *name, size_t size, size_t align,
 		 * Except if an object is really small, then squeeze multiple
 		 * objects into one cacheline.
 		 */
+		/*
+		 * 默认的对齐方式.
+		 * 如果object 太小，压缩多个object 到一个缓存行中.
+		 */
 		ralign = cache_line_size();
 		while (size <= ralign/2)
 			ralign /= 2;
@@ -1297,6 +1345,7 @@ kmem_cache_create (const char *name, size_t size, size_t align,
 	memset(cachep, 0, sizeof(kmem_cache_t));
 
 #if DEBUG
+	/* 此处的size 做了BYTES_PER_WORD 对齐 */
 	cachep->reallen = size;
 
 	if (flags & SLAB_RED_ZONE) {
@@ -1316,6 +1365,11 @@ kmem_cache_create (const char *name, size_t size, size_t align,
 		size += BYTES_PER_WORD;
 	}
 #if FORCED_DEBUG && defined(CONFIG_DEBUG_PAGEALLOC)
+	/* TODO: 理解这里为什么这样处理 */
+	/*
+	 * 如果 128 < size < PAGE_SIZE
+	 * 调整 size 为整个PAGE.
+	 */
 	if (size > 128 && cachep->reallen > cache_line_size() && size < PAGE_SIZE) {
 		cachep->dbghead += PAGE_SIZE - size;
 		size = PAGE_SIZE;
@@ -1333,6 +1387,17 @@ kmem_cache_create (const char *name, size_t size, size_t align,
 
 	size = ALIGN(size, align);
 
+	/*
+	 * 此处的 SLAB_RECLAIM_ACCOUNT、GFP_NOFS 是两个不同的层次.
+	 *
+	 * SLAB_RECLAIM_ACCOUNT 标识缓存可回收，标识的是缓存.
+	 * GFP_NOFS 是内存申请时标识位，标识此次申请不能操作文件系统.
+	 *
+	 * 两者之间有联系是，可回收的内存大多是inode、dcache 缓存等文件系统相关，
+	 * 申请的时候使用GFP_NOFS，此时无法操作文件系统.
+	 * 由于无法操作文件系统，所以内存不足时，申请higher-order page 时失败可能性
+	 * 会增大，所以这里就强制为单页面.
+	 */
 	if ((flags & SLAB_RECLAIM_ACCOUNT) && size <= PAGE_SIZE) {
 		/*
 		 * A VFS-reclaimable slab tends to have most allocations
@@ -1353,6 +1418,11 @@ kmem_cache_create (const char *name, size_t size, size_t align,
 		do {
 			unsigned int break_flag = 0;
 cal_wastage:
+			/*
+			 * 评估slab最合适的页面数.
+			 */
+
+			/* 此处的size 包含debug 信息的大小. */
 			cache_estimate(cachep->gfporder, size, align, flags,
 						&left_over, &cachep->num);
 			if (break_flag)
@@ -1361,6 +1431,7 @@ cal_wastage:
 				break;
 			if (!cachep->num)
 				goto next;
+			/* 如果是off-slab，obj 数量不能超过最大限制 */
 			if (flags & CFLGS_OFF_SLAB &&
 					cachep->num > offslab_limit) {
 				/* This num of objs will cause problems. */
@@ -1376,6 +1447,7 @@ cal_wastage:
 			if (cachep->gfporder >= slab_break_gfp_order)
 				break;
 
+			/* 可接受的内部分片 */
 			if ((left_over*8) <= (PAGE_SIZE<<cachep->gfporder))
 				break;	/* Acceptable internal fragmentation. */
 next:
@@ -1435,6 +1507,10 @@ next:
 	if (g_cpucache_up == FULL) {
 		enable_cpucache(cachep);
 	} else {
+		/*
+		 * kmem_cache_init -> kmem_cache_create
+		 * 才会进入到该分支，此时仅仅boot processor 运行，只会有一个CPU核运行到该部分代码.
+		 */
 		if (g_cpucache_up == NONE) {
 			/* Note: the first kmem_cache_create must create
 			 * the cache that's used by kmalloc(24), otherwise
@@ -1454,7 +1530,7 @@ next:
 		cachep->limit = BOOT_CPUCACHE_ENTRIES;
 		cachep->free_limit = (1+num_online_cpus())*cachep->batchcount
 					+ cachep->num;
-	} 
+	}
 
 	cachep->lists.next_reap = jiffies + REAPTIMEOUT_LIST3 +
 					((unsigned long)cachep)%REAPTIMEOUT_LIST3;
@@ -1473,17 +1549,17 @@ next:
 			/* This happens when the module gets unloaded and doesn't
 			   destroy its slab cache and noone else reuses the vmalloc
 			   area of the module. Print a warning. */
-			if (__get_user(tmp,pc->name)) { 
-				printk("SLAB: cache with size %d has lost its name\n", 
-					pc->objsize); 
-				continue; 
-			} 	
-			if (!strcmp(pc->name,name)) { 
-				printk("kmem_cache_create: duplicate cache %s\n",name); 
-				up(&cache_chain_sem); 
+			if (__get_user(tmp,pc->name)) {
+				printk("SLAB: cache with size %d has lost its name\n",
+					pc->objsize);
+				continue;
+			}
+			if (!strcmp(pc->name,name)) {
+				printk("kmem_cache_create: duplicate cache %s\n",name);
+				up(&cache_chain_sem);
 				unlock_cpu_hotplug();
-				BUG(); 
-			}	
+				BUG();
+			}
 		}
 		set_fs(old_fs);
 	}
@@ -1527,6 +1603,7 @@ static void check_spinlock_acquired(kmem_cache_t *cachep)
 /*
  * Waits for all CPUs to execute func().
  */
+/* 等待所有CPU执行结束再返回 */
 static void smp_call_function_all_cpus(void (*func) (void *arg), void *arg)
 {
 	check_irq_on();
@@ -1690,7 +1767,7 @@ static struct slab* alloc_slabmgmt(kmem_cache_t *cachep,
 			void *objp, int colour_off, unsigned int __nocast local_flags)
 {
 	struct slab *slabp;
-	
+
 	if (OFF_SLAB(cachep)) {
 		/* Slab management obj is off-slab. */
 		slabp = kmem_cache_alloc(cachep->slabp_cache, local_flags);
@@ -1883,8 +1960,8 @@ static void kfree_debugcheck(const void *objp)
 
 	if (!virt_addr_valid(objp)) {
 		printk(KERN_ERR "kfree_debugcheck: out of range ptr %lxh.\n",
-			(unsigned long)objp);	
-		BUG();	
+			(unsigned long)objp);
+		BUG();
 	}
 	page = virt_to_page(objp);
 	if (!PageSlab(page)) {
@@ -1964,7 +2041,7 @@ static void check_slabp(kmem_cache_t *cachep, struct slab *slabp)
 {
 	kmem_bufctl_t i;
 	int entries = 0;
-	
+
 	check_spinlock_acquired(cachep);
 	/* Check slab's freelist to see if this obj is there. */
 	for (i = slabp->free; i != BUFCTL_END; i = slab_bufctl(slabp)[i]) {
@@ -2074,7 +2151,7 @@ alloc_done:
 	if (unlikely(!ac->avail)) {
 		int x;
 		x = cache_grow(cachep, flags, -1);
-		
+
 		// cache_grow can reenable interrupts, then ac could change.
 		ac = ac_data(cachep);
 		if (!x && ac->avail == 0)	// no objects in sight? abort
@@ -2101,7 +2178,7 @@ static void *
 cache_alloc_debugcheck_after(kmem_cache_t *cachep,
 			unsigned long flags, void *objp, void *caller)
 {
-	if (!objp)	
+	if (!objp)
 		return objp;
  	if (cachep->flags & SLAB_POISON) {
 #ifdef CONFIG_DEBUG_PAGEALLOC
@@ -2135,7 +2212,7 @@ cache_alloc_debugcheck_after(kmem_cache_t *cachep,
 			ctor_flags |= SLAB_CTOR_ATOMIC;
 
 		cachep->ctor(objp, cachep, ctor_flags);
-	}	
+	}
 	return objp;
 }
 #else
@@ -2166,7 +2243,7 @@ static inline void *__cache_alloc(kmem_cache_t *cachep, unsigned int __nocast fl
 	return objp;
 }
 
-/* 
+/*
  * NUMA: different approach needed if the spinlock is moved into
  * the l3 structure
  */
@@ -2625,6 +2702,7 @@ struct ccupdate_struct {
 	struct array_cache *new[NR_CPUS];
 };
 
+/* 关中断执行 */
 static void do_ccupdate_local(void *info)
 {
 	struct ccupdate_struct *new = (struct ccupdate_struct *)info;
@@ -2632,11 +2710,10 @@ static void do_ccupdate_local(void *info)
 
 	check_irq_off();
 	old = ac_data(new->cachep);
-	
+
 	new->cachep->array[smp_processor_id()] = new->new[smp_processor_id()];
 	new->new[smp_processor_id()] = old;
 }
-
 
 static int do_tune_cpucache(kmem_cache_t *cachep, int limit, int batchcount,
 				int shared)
@@ -2659,8 +2736,9 @@ static int do_tune_cpucache(kmem_cache_t *cachep, int limit, int batchcount,
 	}
 	new.cachep = cachep;
 
+	/* 等待所有CPU执行结束再返回 */
 	smp_call_function_all_cpus(do_ccupdate_local, (void *)&new);
-	
+
 	check_irq_on();
 	spin_lock_irq(&cachep->spinlock);
 	cachep->batchcount = batchcount;
@@ -2702,7 +2780,7 @@ static void enable_cpucache(kmem_cache_t *cachep)
 	/* The head array serves three purposes:
 	 * - create a LIFO ordering, i.e. return objects that are cache-warm
 	 * - reduce the number of spinlock operations.
-	 * - reduce the number of linked list operations on the slab and 
+	 * - reduce the number of linked list operations on the slab and
 	 *   bufctl chains: array operations are cheaper.
 	 * The numbers are guessed, we should auto-tune as described by
 	 * Bonwick.
@@ -2734,7 +2812,7 @@ static void enable_cpucache(kmem_cache_t *cachep)
 
 #if DEBUG
 	/* With debugging enabled, large batchcount lead to excessively
-	 * long periods with disabled local interrupts. Limit the 
+	 * long periods with disabled local interrupts. Limit the
 	 * batchcount
 	 */
 	if (limit > 32)
@@ -2908,7 +2986,7 @@ static int s_show(struct seq_file *m, void *p)
 	unsigned long	num_objs;
 	unsigned long	active_slabs = 0;
 	unsigned long	num_slabs;
-	const char *name; 
+	const char *name;
 	char *error = NULL;
 
 	check_irq_on();
@@ -2942,7 +3020,7 @@ static int s_show(struct seq_file *m, void *p)
 	if (num_objs - active_objs != cachep->lists.free_objects && !error)
 		error = "free_objects accounting error";
 
-	name = cachep->name; 
+	name = cachep->name;
 	if (error)
 		printk(KERN_ERR "slab: cache %s error: %s\n", name, error);
 
@@ -2966,7 +3044,7 @@ static int s_show(struct seq_file *m, void *p)
 		unsigned long node_allocs = cachep->node_allocs;
 
 		seq_printf(m, " : globalstat %7lu %6lu %5lu %4lu %4lu %4lu %4lu %4lu",
-				allocs, high, grown, reaped, errors, 
+				allocs, high, grown, reaped, errors,
 				max_freeable, free_limit, node_allocs);
 	}
 	/* cpu stats */
@@ -3020,12 +3098,12 @@ ssize_t slabinfo_write(struct file *file, const char __user *buffer,
 	char kbuf[MAX_SLABINFO_WRITE+1], *tmp;
 	int limit, batchcount, shared, res;
 	struct list_head *p;
-	
+
 	if (count > MAX_SLABINFO_WRITE)
 		return -EINVAL;
 	if (copy_from_user(&kbuf, buffer, count))
 		return -EFAULT;
-	kbuf[MAX_SLABINFO_WRITE] = '\0'; 
+	kbuf[MAX_SLABINFO_WRITE] = '\0';
 
 	tmp = strchr(kbuf, ' ');
 	if (!tmp)

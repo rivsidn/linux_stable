@@ -421,6 +421,12 @@ void __init parse_early_param(void)
  *	Activate the first processor.
  */
 
+/*
+ * CPU启动流程：
+ *   - BSP执行 start_kernel() → rest_init() → init() → smp_init()
+ *   - 在 smp_init() 中调用 cpu_up() 启动其他CPU
+ *   - 其他CPU启动后直接进入各自的idle循环，不重复执行 start_kernel
+ */
 asmlinkage void __init start_kernel(void)
 {
 	char * command_line;

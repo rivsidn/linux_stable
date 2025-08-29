@@ -159,3 +159,5 @@ config FRAME_POINTER
 	  If you don't debug the kernel, you can say N, but we may not be able
 	  to solve problems without frame pointers.
 
+source "samples/Kconfig"
+
