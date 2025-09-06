@@ -1,0 +1,21 @@
+menuconfig SAMPLES
+	bool "Sample kernel code"
+	help
+	  You can build and test sample kernel code here.
+
+if SAMPLES
+
+config SAMPLE_HELLO
+	tristate "Build hello world example -- loadable modules only"
+	depends on m
+	help
+	  This builds a simple hello world kernel module example.
+
+config SAMPLE_DUMP_GDT
+	tristate "dump arch x86 gdt"
+	depends on m
+	depends on X86 || x86_64
+	help
+	  Dump x86 global descriptor table.
+
+endif # SAMPLES
