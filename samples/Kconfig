@@ -76,4 +76,27 @@ config SAMPLE_CONFIGFS
 	help
 	  Builds a sample configfs interface.
 
+config SAMPLE_WORKQUEUE
+	tristate "Build workqueue sample -- loadable modules only"
+	depends on m
+	help
+	  This builds a sample workqueue module that demonstrates
+	  the use of workqueues including:
+	  - Creating custom workqueues
+	  - Using work_struct and delayed_work
+	  - Dynamic work allocation
+	  - Work cancellation and flushing
+
+	  If in doubt, say "N" here.
+
+config SAMPLE_DELAYED_WORK_RACE
+	tristate "Build delayed_work race condition example -- loadable module only"
+	depends on m
+	help
+	  This builds a sample module that demonstrates the delayed_work
+	  race condition similar to the CIFS echo request bug, showing
+	  how cancel_delayed_work_sync can fail to prevent re-queueing.
+
+	  If in doubt, say "N" here.
+
 endif # SAMPLES
