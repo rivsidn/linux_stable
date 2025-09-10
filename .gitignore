@@ -140,3 +140,26 @@ include/linux/autoconf.h
 include/linux/version.h
 scripts/
 
+# i386 comple intermediate files
+arch/i386/boot/bootsect
+arch/i386/boot/bzImage
+arch/i386/boot/compressed/vmlinux
+arch/i386/boot/setup
+arch/i386/boot/tools/build
+arch/i386/kernel/vmlinux.lds
+arch/i386/kernel/vsyscall.lds
+drivers/char/consolemap_deftbl.c
+drivers/char/defkeymap.c
+drivers/pci/classlist.h
+drivers/pci/devlist.h
+drivers/pci/gen-devlist
+drivers/scsi/aic7xxx/aic79xx_reg.h
+drivers/scsi/aic7xxx/aic79xx_seq.h
+include/asm-i386/asm_offsets.h
+include/linux/compile.h
+kernel/config_data.h
+lib/crc32table.h
+lib/gen_crc32table
+usr/gen_init_cpio
+usr/initramfs_data.cpio
+usr/initramfs_list
