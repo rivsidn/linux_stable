@@ -35,6 +35,13 @@
  * remove_sequence is >= the insert_sequence which pertained when
  * flush_scheduled_work() was called.
  */
+/* 序列号是为了防止新加入的work 导致刷新的时候永远无法退出. */
+/*
+ * cpu_workqueue_struct - 每CPU 工作队列结构体
+ *
+ * @more_work: 执行具体工作进程的等待队列
+ * @work_done: 执行刷新操作进程的等待队列
+ */
 struct cpu_workqueue_struct {
 
 	spinlock_t lock;
@@ -62,8 +69,11 @@ struct workqueue_struct {
 	struct list_head list; 	/* Empty if single thread */
 };
 
-/* All the per-cpu workqueues on the system, for hotplug cpu to add/remove
-   threads to each one as cpus come/go. */
+/*
+ * All the per-cpu workqueues on the system,
+ * for hotplug cpu to add/remove threads to each one as cpus come/go.
+ */
+/* 将所有的per-cpu 工作队列添加到列表中，热插拔的CPU 会遍历链表添加/移除线程 */
 static DEFINE_SPINLOCK(workqueue_lock);
 static LIST_HEAD(workqueues);
 
@@ -121,6 +131,7 @@ static void delayed_work_timer_fn(unsigned long __data)
 	__queue_work(wq->cpu_wq + cpu, work);
 }
 
+/* 先设置定时器，定时器超时之后添加到工作队列中 */
 int fastcall queue_delayed_work(struct workqueue_struct *wq,
 			struct work_struct *work, unsigned long delay)
 {
@@ -154,6 +165,15 @@ static inline void run_workqueue(struct cpu_workqueue_struct *cwq)
 	cwq->run_depth++;
 	if (cwq->run_depth > 3) {
 		/* morton gets to eat his hat */
+		/*
+		 * "eat one's hat"
+		 * 是一个英语习语，意思是"如果某事发生，我就吃掉我
+		 * 的帽子"，表示说话者认为这件事绝对不可能发生。
+
+		 * Morton 指的是 Andrew Morton，Linux
+		 * 内核的重要开发者之一，也是这个 workqueue
+		 * 代码的原始作者之一（在文件头部注释中可以看到）。
+		 */
 		printk("%s: recursion depth exceeded: %d\n",
 			__FUNCTION__, cwq->run_depth);
 		dump_stack();
@@ -167,18 +187,21 @@ static inline void run_workqueue(struct cpu_workqueue_struct *cwq)
 		list_del_init(cwq->worklist.next);
 		spin_unlock_irqrestore(&cwq->lock, flags);
 
+		/* 函数执行 */
 		BUG_ON(work->wq_data != cwq);
 		clear_bit(0, &work->pending);
 		f(data);
 
 		spin_lock_irqsave(&cwq->lock, flags);
 		cwq->remove_sequence++;
+		/* 唤醒等待进程 */
 		wake_up(&cwq->work_done);
 	}
 	cwq->run_depth--;
 	spin_unlock_irqrestore(&cwq->lock, flags);
 }
 
+/* 工作队列内核线程 */
 static int worker_thread(void *__cwq)
 {
 	struct cpu_workqueue_struct *cwq = __cwq;
@@ -186,16 +209,23 @@ static int worker_thread(void *__cwq)
 	struct k_sigaction sa;
 	sigset_t blocked;
 
+	/* 该进程不能被冻结 */
 	current->flags |= PF_NOFREEZE;
 
+	/* 提高进程调度优先级 */
 	set_user_nice(current, -5);
 
 	/* Block and flush all signals */
 	sigfillset(&blocked);
 	sigprocmask(SIG_BLOCK, &blocked, NULL);
+	/* 清楚所有待处理的信号，不会调用任何信号处理函数 */
 	flush_signals(current);
 
 	/* SIG_IGN makes children autoreap: see do_notify_parent(). */
+	/*
+	 * 忽略子进程信号.
+	 * 执行该操作之后，子进程会被自动回收.
+	 */
 	sa.sa.sa_handler = SIG_IGN;
 	sa.sa.sa_flags = 0;
 	siginitset(&sa.sa.sa_mask, sigmask(SIGCHLD));
@@ -214,6 +244,8 @@ static int worker_thread(void *__cwq)
 			run_workqueue(cwq);
 		set_current_state(TASK_INTERRUPTIBLE);
 	}
+
+	/* 进程退出时必须处于TASK_RUNNING，才能执行正常的退出流程 */
 	__set_current_state(TASK_RUNNING);
 	return 0;
 }
@@ -224,6 +256,10 @@ static void flush_cpu_workqueue(struct cpu_workqueue_struct *cwq)
 		/*
 		 * Probably keventd trying to flush its own queue. So simply run
 		 * it by hand rather than deadlocking.
+		 */
+		/*
+		 * 运行，直到工作队列中所有work 都执行结束再返回.
+		 * 有livelocked的可能.
 		 */
 		run_workqueue(cwq);
 	} else {
@@ -240,6 +276,7 @@ static void flush_cpu_workqueue(struct cpu_workqueue_struct *cwq)
 			schedule();
 			spin_lock_irq(&cwq->lock);
 		}
+		/* 恢复进程为TASK_RUNNING 状态 */
 		finish_wait(&cwq->work_done, &wait);
 		spin_unlock_irq(&cwq->lock);
 	}
@@ -301,6 +338,7 @@ static struct task_struct *create_workqueue_thread(struct workqueue_struct *wq,
 	return p;
 }
 
+/* 创建工作队列 */
 struct workqueue_struct *__create_workqueue(const char *name,
 					    int singlethread)
 {
@@ -317,6 +355,7 @@ struct workqueue_struct *__create_workqueue(const char *name,
 
 	wq->name = name;
 	/* We don't need the distraction of CPUs appearing and vanishing. */
+	/* 禁止CPU热插拔 */
 	lock_cpu_hotplug();
 	if (singlethread) {
 		INIT_LIST_HEAD(&wq->list);
@@ -332,6 +371,7 @@ struct workqueue_struct *__create_workqueue(const char *name,
 		for_each_online_cpu(cpu) {
 			p = create_workqueue_thread(wq, cpu);
 			if (p) {
+				/* 线程绑定CPU */
 				kthread_bind(p, cpu);
 				wake_up_process(p);
 			} else
@@ -350,6 +390,7 @@ struct workqueue_struct *__create_workqueue(const char *name,
 	return wq;
 }
 
+/* 结束线程 */
 static void cleanup_workqueue_thread(struct workqueue_struct *wq, int cpu)
 {
 	struct cpu_workqueue_struct *cwq;
@@ -398,6 +439,7 @@ int fastcall schedule_delayed_work(struct work_struct *work, unsigned long delay
 	return queue_delayed_work(keventd_wq, work, delay);
 }
 
+/* 指定运行的CPU */
 int schedule_delayed_work_on(int cpu,
 			struct work_struct *work, unsigned long delay)
 {
@@ -466,7 +508,6 @@ int current_is_keventd(void)
 		ret = 1;
 
 	return ret;
-
 }
 
 #ifdef CONFIG_HOTPLUG_CPU
@@ -500,6 +541,7 @@ static int __devinit workqueue_cpu_callback(struct notifier_block *nfb,
 	switch (action) {
 	case CPU_UP_PREPARE:
 		/* Create a new workqueue thread for it. */
+		/* 创建工作线程 */
 		list_for_each_entry(wq, &workqueues, list) {
 			if (create_workqueue_thread(wq, hotcpu) < 0) {
 				printk("workqueue for %i failed\n", hotcpu);
@@ -510,6 +552,7 @@ static int __devinit workqueue_cpu_callback(struct notifier_block *nfb,
 
 	case CPU_ONLINE:
 		/* Kick off worker threads. */
+		/* 唤醒线程 */
 		list_for_each_entry(wq, &workqueues, list) {
 			kthread_bind(wq->cpu_wq[hotcpu].thread, hotcpu);
 			wake_up_process(wq->cpu_wq[hotcpu].thread);

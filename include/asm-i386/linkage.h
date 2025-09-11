@@ -3,6 +3,7 @@
 
 #define asmlinkage CPP_ASMLINKAGE __attribute__((regparm(0)))
 #define FASTCALL(x)	x __attribute__((regparm(3)))
+/* 前三个参数通过寄存器传递 EAX EDX ECX */
 #define fastcall	__attribute__((regparm(3)))
 
 #define prevent_tail_call(ret) __asm__ ("" : "=r" (ret) : "0" (ret))
