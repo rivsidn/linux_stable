@@ -1,0 +1,133 @@
+#!/bin/bash
+
+export KDEV_KERNEL=arch/i386/boot/bzImage
+export KDEV_DOCKER_IMAGE=ubuntu-5.10-i386
+export KDEV_QEMU_IMAGE=/opt/ubuntu-rootfs/ubuntu-5.10-i386-rootfs.img
+export KDEV_QEMU_EMULATOR=qemu-system-i386
+
+alias kdev_build='docker run -it --rm -v $PWD:/workspace -w /workspace --hostname kernel-dev $KDEV_DOCKER_IMAGE bash'
+
+# 传输文件到 rootfs.img
+kdev_push() {
+	local src="$1"
+	local dst="${2:-/root/}"
+
+	# 检查参数
+	if [ -z "$src" ]; then
+		echo "Usage: kdev_push <source_file/dir> [destination_path]"
+		echo "Example:"
+		echo "  kdev_push module.ko          # 传输到 /root/"
+		echo "  kdev_push *.ko /lib/modules/ # 传输多个文件"
+		echo "  kdev_push mydir/ /opt/       # 传输目录"
+		return 1
+	fi
+
+	# 检查源文件是否存在
+	if [ ! -e "$src" ]; then
+		echo "Error: Source '$src' not found"
+		return 1
+	fi
+
+	# 检查镜像文件
+	if [ ! -f "$KDEV_QEMU_IMAGE" ]; then
+		echo "Error: QEMU image not found: $KDEV_QEMU_IMAGE"
+		return 1
+	fi
+
+	# 创建临时挂载点
+	local mount_point="/tmp/kdev-mount-$$"
+	echo "Mounting $KDEV_QEMU_IMAGE..."
+
+	# 挂载镜像
+	sudo mkdir -p "$mount_point"
+	if ! sudo mount -o loop "$KDEV_QEMU_IMAGE" "$mount_point"; then
+		echo "Error: Failed to mount image"
+		sudo rmdir "$mount_point"
+		return 1
+	fi
+
+	# 检查目标目录是否存在
+	if [ ! -d "$mount_point$dst" ]; then
+		echo "Error: Target directory '$dst' does not exist in image"
+		sudo umount "$mount_point"
+		sudo rmdir "$mount_point"
+		return 1
+	fi
+
+	# 复制文件
+	echo "Copying $src to $dst..."
+	if [ -d "$src" ]; then
+		# 复制目录
+		sudo cp -r "$src" "$mount_point$dst"
+	else
+		# 复制文件
+		sudo cp "$src" "$mount_point$dst"
+	fi
+
+	local result=$?
+
+	# 卸载镜像
+	sudo umount "$mount_point"
+	sudo rmdir "$mount_point"
+
+	if [ $result -eq 0 ]; then
+		echo "File(s) transferred successfully"
+	else
+		echo "Transfer failed"
+		return 1
+	fi
+}
+
+kdev_run() {
+	local mode="$1"
+	case "$mode" in
+		terminal)
+			$KDEV_QEMU_EMULATOR -kernel $KDEV_KERNEL -hda $KDEV_QEMU_IMAGE \
+				-append "root=/dev/hda rw init=/bin/bash console=ttyS0" \
+				-nographic -m 256M
+			;;
+		debug)
+			$KDEV_QEMU_EMULATOR -kernel $KDEV_KERNEL -hda $KDEV_QEMU_IMAGE \
+				-append "root=/dev/hda rw init=/bin/bash console=ttyS0" \
+				-nographic -gdb tcp::1234 -S -m 256M
+			;;
+		gui|internet)
+			$KDEV_QEMU_EMULATOR -kernel $KDEV_KERNEL -hda $KDEV_QEMU_IMAGE \
+				-netdev user,id=net0 -device e1000,netdev=net0 \
+				-append "root=/dev/hda rw init=/sbin/init console=tty0" -m 256M
+			;;
+		bridge)
+			# 桥接模式（需要 root 权限）
+			echo "Bridge mode requires root permission and bridge setup"
+			echo "Setting up bridge br0..."
+
+			# 检查并创建桥接
+			if ! ip link show br0 &>/dev/null; then
+				sudo ip link add br0 type bridge
+				sudo ip link set br0 up
+				sudo ip addr add 172.20.0.1/24 dev br0
+				sudo iptables -t nat -A POSTROUTING -s 172.20.0.0/24 ! -o tap0 -j MASQUERADE
+				sudo sysctl -w net.ipv4.ip_forward=1
+				echo "Bridge br0 created with IP 172.20.0.1/24"
+			else
+				echo "Using existing bridge br0"
+			fi
+
+			# 使用 sudo 和 TAP 设备（更可靠）
+			sudo $KDEV_QEMU_EMULATOR -kernel $KDEV_KERNEL -hda $KDEV_QEMU_IMAGE \
+				-netdev tap,id=net0,script=/etc/kdev-qemu-ifup,downscript=/etc/kdev-qemu-ifdown \
+				-device e1000,netdev=net0 \
+				-gdb tcp::1234 \
+				-append "root=/dev/hda rw init=/sbin/init console=tty0" -m 512M
+			;;
+		*)
+			echo "Usage: kdev_run {terminal|debug|internet|bridge}"
+			echo "  terminal - 基础终端模式"
+			echo "  gui      - 图形界面模式"
+			echo "  debug    - GDB 调试模式"
+			echo "  internet - 基础网络模式"
+			echo "  bridge   - 桥接网络模式"
+			;;
+	esac
+}
+
