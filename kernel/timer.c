@@ -52,6 +52,11 @@ static void time_interpolator_update(long delta_nsec);
 
 #define TVN_BITS (CONFIG_BASE_SMALL ? 4 : 6)
 #define TVR_BITS (CONFIG_BASE_SMALL ? 6 : 8)
+/*
+ * 没定义CONFIG_BASE_SMALL 时候，值为:
+ * #define TVN_SIZE	64
+ * #define TVR_SIZE	256
+ */
 #define TVN_SIZE (1 << TVN_BITS)
 #define TVR_SIZE (1 << TVR_BITS)
 #define TVN_MASK (TVN_SIZE - 1)
@@ -65,6 +70,11 @@ typedef struct tvec_root_s {
 	struct list_head vec[TVR_SIZE];
 } tvec_root_t;
 
+/*
+ * @timer_jiffies: 当前处理过的jiffies.
+ *                 软中断处理的jiffies 可能会有延迟，不与全局jiffies 同步.
+ * @running_timer: 当前正在运行的定时器
+ */
 struct tvec_t_base_s {
 	spinlock_t lock;
 	unsigned long timer_jiffies;
@@ -113,7 +123,37 @@ static inline void check_timer(struct timer_list *timer)
 		check_timer_failed(timer);
 }
 
-
+/*
+ * 添加定时器到链表.
+ *
+ * 参照图 timer.drawio::tvec.
+ *
+ * timer_jiffies == 0.
+ * 1. expires == 256, idx = 256
+ *    放到tv2 中，i = 0，即 v2[0]
+ *
+ * timer_jiffies == 17.
+ * 1. expires == 256, idx = 239
+ *    放到tv1 中，i = 0 ，即 tv2[0]
+ * 2. expires == 275, idx = 258
+ *    放到tv1 中，i = 1 ，即 tv2[1]
+ *
+ * timer_jiffies == 21.
+ * 1. expires == 275, idx = 254
+ *    放到tv1 中，i = 19，即 tv1[19]
+ *
+ * | 超时时间 | timer_jiffies=0 | timer_jiffies=17 | timer_jiffies=21 |
+ * |----------|-----------------|------------------|------------------|
+ * | 256      | tv2[0]          | tv1[0]           | x                |
+ * | 275      |                 | tv2[1]           | tv1[19]          |
+ *
+ * 即tv 中的队列是滚动利用的，随着timer_jiffies 向前推进，原本存储在tv2 中的timer
+ * 之后会被存储到tv1中.
+ *
+ * 所以，当我执行到每个数组index == 0 的时候，表示index回绕了.
+ * 以上边超时时间256 为例，同样的256 可能存储在tv2[0]，也可能存储在tv1[0]，
+ * 所以在执行到tv1[0]的时候，需要将tv2[0]的定时器拿下来，放到tv1[] 中，统一处理.
+ */
 static void internal_add_timer(tvec_base_t *base, struct timer_list *timer)
 {
 	unsigned long expires = timer->expires;
@@ -143,6 +183,7 @@ static void internal_add_timer(tvec_base_t *base, struct timer_list *timer)
 		/* If the timeout is larger than 0xffffffff on 64-bit
 		 * architectures then we use the maximum timeout:
 		 */
+		/* 如果很大，用最大超时时间 */
 		if (idx > 0xffffffffUL) {
 			idx = 0xffffffffUL;
 			expires = idx + base->timer_jiffies;
@@ -173,6 +214,7 @@ repeat:
 
 	/*
 	 * Prevent deadlocks via ordering by old_base < new_base.
+	 * 为了防止死锁，调整锁的顺序.
 	 */
 	if (old_base && (new_base != old_base)) {
 		if (old_base < new_base) {
@@ -293,6 +335,15 @@ EXPORT_SYMBOL(mod_timer);
  * (ie. del_timer() of an inactive timer returns 0, del_timer() of an
  * active timer returns 1.)
  */
+/*
+ *
+ * 返回0 : 定时器当前不在队列中(可能正在被执行).
+ *         可能正在被执行，如果执行函数会重新将定时器加入队列，则可能会出现
+ *         从该函数返回之后，定时器还在队列中的情况.
+ *         此处应该是个BUG ，不是特性.
+ * 返回1 : 定时器从队列中删除(没有被执行).
+ *         删除后不会被重新添加到定时器链表中.
+ */
 int del_timer(struct timer_list *timer)
 {
 	unsigned long flags;
@@ -301,6 +352,12 @@ int del_timer(struct timer_list *timer)
 	check_timer(timer);
 
 repeat:
+	/*
+	 * 此处直接返回 0 并不能保证定时器不在链表中了.
+	 * 如果定时器此时正在被执行，此时base 为空，直接返回.
+	 * 但是如果定时器handler 会将定时器再次加入到队列中，此时就会出现即使
+	 * 函数返回了，但是定时器依旧在队列中的情况.
+	 */
  	base = timer->base;
 	if (!base)
 		return 0;
@@ -342,6 +399,9 @@ EXPORT_SYMBOL(del_timer);
  * is known to not do this (a single shot timer) then use
  * del_singleshot_timer_sync() instead.
  */
+/*
+ * 删除定时器，如果定时器处理函数正在执行，需要等待定时器执行结束.
+ */
 int del_timer_sync(struct timer_list *timer)
 {
 	tvec_base_t *base;
@@ -363,6 +423,12 @@ del_again:
 		}
 	}
 	smp_rmb();
+	/*
+	 * 定时器执行结束之后，如果重新又被调用执行了 且 在执行函数中会重新
+	 * 将定时器加入到队列中.
+	 * 最终会出现这种情况，即使从函数中返回了，但定时器还在队列中.
+	 * 此处是个BUG.
+	 */
 	if (timer_pending(timer))
 		goto del_again;
 
@@ -386,6 +452,7 @@ EXPORT_SYMBOL(del_timer_sync);
  *
  * The function returns whether it has deactivated a pending timer or not.
  */
+/* 调用者保证定时器不会重新调用自己 */
 int del_singleshot_timer_sync(struct timer_list *timer)
 {
 	int ret = del_timer(timer);
@@ -417,6 +484,7 @@ static int cascade(tvec_base_t *base, tvec_t *tv, int index)
 		tmp = list_entry(curr, struct timer_list, entry);
 		BUG_ON(tmp->base != base);
 		curr = curr->next;
+		/* 重新分配链表下定时器到base */
 		internal_add_timer(base, tmp);
 	}
 	INIT_LIST_HEAD(head);
@@ -431,26 +499,38 @@ static int cascade(tvec_base_t *base, tvec_t *tv, int index)
  * This function cascades all vectors and executes all expired timer
  * vectors.
  */
+/*
+ * INDEX(0) -- tv2
+ * INDEX(1) -- tv3
+ * INDEX(2) -- tv4
+ * INDEX(3) -- tv5
+ *
+ * INDEX(0) 表示的是tv2中下一个需要处理链表的index.
+ */
 #define INDEX(N) (base->timer_jiffies >> (TVR_BITS + N * TVN_BITS)) & TVN_MASK
 
 static inline void __run_timers(tvec_base_t *base)
 {
 	struct timer_list *timer;
 
+	/* 依次检查 jiffies */
 	spin_lock_irq(&base->lock);
 	while (time_after_eq(jiffies, base->timer_jiffies)) {
 		struct list_head work_list = LIST_HEAD_INIT(work_list);
 		struct list_head *head = &work_list;
- 		int index = base->timer_jiffies & TVR_MASK;
+		int index = base->timer_jiffies & TVR_MASK;
  
 		/*
 		 * Cascade timers:
+		 * 级联定时器:
 		 */
 		if (!index &&
 			(!cascade(base, &base->tv2, INDEX(0))) &&
 				(!cascade(base, &base->tv3, INDEX(1))) &&
 					!cascade(base, &base->tv4, INDEX(2)))
 			cascade(base, &base->tv5, INDEX(3));
+
+		/* 递增本地jiffies */
 		++base->timer_jiffies; 
 		list_splice_init(base->tv1.vec + index, &work_list);
 repeat:
@@ -459,14 +539,15 @@ repeat:
 			unsigned long data;
 
 			timer = list_entry(head->next,struct timer_list,entry);
- 			fn = timer->function;
- 			data = timer->data;
+			fn = timer->function;
+			data = timer->data;
 
 			list_del(&timer->entry);
 			set_running_timer(base, timer);
 			smp_wmb();
 			timer->base = NULL;
 			spin_unlock_irq(&base->lock);
+			/* 定时器执行过程中，中断是开启的 */
 			{
 				u32 preempt_count = preempt_count();
 				fn(data);
@@ -489,6 +570,7 @@ repeat:
  * is used on S/390 to stop all activity when a cpus is idle.
  * This functions needs to be called disabled.
  */
+/* 调用该函数需要关闭中断 */
 unsigned long next_timer_interrupt(void)
 {
 	tvec_base_t *base;
@@ -508,6 +590,10 @@ unsigned long next_timer_interrupt(void)
 	do {
 		list_for_each_entry(nte, base->tv1.vec + j, entry) {
 			expires = nte->expires;
+			/*
+			 * BUG: 此处应该处理的遍历的是INDEX(0) + 1.
+			 *      遍历下一个需要处理的槽位.
+			 */
 			if (j < (base->timer_jiffies & TVR_MASK))
 				list = base->tv2.vec + (INDEX(0));
 			goto found;
@@ -515,6 +601,7 @@ unsigned long next_timer_interrupt(void)
 		j = (j + 1) & TVR_MASK;
 	} while (j != (base->timer_jiffies & TVR_MASK));
 
+	/* 通过这种方式写了一个循环 */
 	/* Check tv2-tv5. */
 	varray[0] = &base->tv2;
 	varray[1] = &base->tv3;
@@ -523,10 +610,15 @@ unsigned long next_timer_interrupt(void)
 	for (i = 0; i < 4; i++) {
 		j = INDEX(i);
 		do {
+			/* 如果为空，递增 j ，继续处理 */
 			if (list_empty(varray[i]->vec + j)) {
 				j = (j + 1) & TVN_MASK;
 				continue;
 			}
+			/*
+			 * 这些链表中的定时器并不按照超时时间先后顺序排列，
+			 * 所以需要遍历.
+			 */
 			list_for_each_entry(nte, varray[i]->vec + j, entry)
 				if (time_before(nte->expires, expires))
 					expires = nte->expires;
@@ -536,6 +628,11 @@ unsigned long next_timer_interrupt(void)
 		} while (j != (INDEX(i)));
 	}
 found:
+	/*
+	 * 参照 internal_add_timer 中注释，
+	 * 如果数组发生了回绕，在下一级队列中可能存在更小的超时时间，
+	 * 需要继续检查.
+	 */
 	if (list) {
 		/*
 		 * The search wrapped. We need to look at the next list
@@ -888,6 +985,10 @@ static void run_timer_softirq(struct softirq_action *h)
 {
 	tvec_base_t *base = &__get_cpu_var(tvec_bases);
 
+	/*
+	 * 满足条件时，表示需要检测该base 结构体了，
+	 * 并不表示一定有定时器需要处理.
+	 */
 	if (time_after_eq(jiffies, base->timer_jiffies))
 		__run_timers(base);
 }

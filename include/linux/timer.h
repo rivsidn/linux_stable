@@ -70,6 +70,7 @@ extern unsigned long next_timer_interrupt(void);
 
 /***
  * add_timer - start a timer
+ *           - 启动定时器
  * @timer: the timer to be added
  *
  * The kernel will do a ->function(->data) callback from the

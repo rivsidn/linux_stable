@@ -135,6 +135,7 @@ void it_real_fn(unsigned long __data)
 {
 	struct task_struct * p = (struct task_struct *) __data;
 
+	/* 最终还是向用户发送信号 */
 	send_group_sig_info(SIGALRM, SEND_SIG_PRIV, p);
 
 	/*
