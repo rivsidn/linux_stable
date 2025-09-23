@@ -98,6 +98,7 @@ static inline void init_waitqueue_func_entry(wait_queue_t *q,
 	q->func = func;
 }
 
+/* 检查等待队列，是否有等待进程 */
 static inline int waitqueue_active(wait_queue_head_t *q)
 {
 	return !list_empty(&q->task_list);
@@ -110,12 +111,17 @@ static inline int waitqueue_active(wait_queue_head_t *q)
  * aio specifies a wait queue entry with an async notification
  * callback routine, not associated with any task.
  */
+/*
+ * 同步队列，绑定当前进程；
+ * 异步队列，不绑定当前进程，仅执行回调函数.
+ */
 #define is_sync_wait(wait)	(!(wait) || ((wait)->task))
 
 extern void FASTCALL(add_wait_queue(wait_queue_head_t *q, wait_queue_t * wait));
 extern void FASTCALL(add_wait_queue_exclusive(wait_queue_head_t *q, wait_queue_t * wait));
 extern void FASTCALL(remove_wait_queue(wait_queue_head_t *q, wait_queue_t * wait));
 
+/* 添加等待队列、头插 */
 static inline void __add_wait_queue(wait_queue_head_t *head, wait_queue_t *new)
 {
 	list_add(&new->task_list, &head->task_list);
@@ -124,6 +130,7 @@ static inline void __add_wait_queue(wait_queue_head_t *head, wait_queue_t *new)
 /*
  * Used for wake-one threads:
  */
+/* 一次只唤醒一个进程，确保先进先出 */
 static inline void __add_wait_queue_tail(wait_queue_head_t *head,
 						wait_queue_t *new)
 {
@@ -136,8 +143,15 @@ static inline void __remove_wait_queue(wait_queue_head_t *head,
 	list_del(&old->task_list);
 }
 
+/* 唤醒函数 */
 void FASTCALL(__wake_up(wait_queue_head_t *q, unsigned int mode, int nr, void *key));
+/* 唤醒函数，已经获取锁的情况下调用 */
 extern void FASTCALL(__wake_up_locked(wait_queue_head_t *q, unsigned int mode));
+/*
+ * 唤醒函数，同步唤醒.
+ * 同步唤醒意思是当前进程马上就要让出CPU，如果被唤醒进程会运行在当前CPU上，
+ * 不需要触发抢占.
+ */
 extern void FASTCALL(__wake_up_sync(wait_queue_head_t *q, unsigned int mode, int nr));
 void FASTCALL(__wake_up_bit(wait_queue_head_t *, void *, int));
 int FASTCALL(__wait_on_bit(wait_queue_head_t *, struct wait_bit_queue *, int (*)(void *), unsigned));
