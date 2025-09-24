@@ -35,7 +35,7 @@ void fastcall add_wait_queue_exclusive(wait_queue_head_t *q, wait_queue_t *wait)
 }
 EXPORT_SYMBOL(add_wait_queue_exclusive);
 
-/* 删除等待队列 */
+/* 等待队列中删除 */
 void fastcall remove_wait_queue(wait_queue_head_t *q, wait_queue_t *wait)
 {
 	unsigned long flags;
@@ -160,7 +160,9 @@ __wait_on_bit(wait_queue_head_t *wq, struct wait_bit_queue *q,
 	int ret = 0;
 
 	do {
+		/* 添加到等待队列 */
 		prepare_to_wait(wq, &q->wait, mode);
+		/* 检查该bit 是否设置，如果依旧设置则执行action() */
 		if (test_bit(q->key.bit_nr, q->key.flags))
 			ret = (*action)(q->key.flags);
 	} while (test_bit(q->key.bit_nr, q->key.flags) && !ret);
@@ -169,6 +171,7 @@ __wait_on_bit(wait_queue_head_t *wq, struct wait_bit_queue *q,
 }
 EXPORT_SYMBOL(__wait_on_bit);
 
+/* 非内链函数 */
 int __sched fastcall out_of_line_wait_on_bit(void *word, int bit,
 					int (*action)(void *), unsigned mode)
 {
@@ -232,12 +235,21 @@ EXPORT_SYMBOL(__wake_up_bit);
  * may need to use a less regular barrier, such fs/inode.c's smp_mb(),
  * because spin_unlock() does not guarantee a memory barrier.
  */
+/* TODO: 没弄明白这里内存屏障的使用 */
 void fastcall wake_up_bit(void *word, int bit)
 {
 	__wake_up_bit(bit_waitqueue(word, bit), word, bit);
 }
 EXPORT_SYMBOL(wake_up_bit);
 
+/*
+ * 获取对应的等待队列头部.
+ * 这里的bit 是index ，类似 0 1 2 3 4 ...
+ * 所以BITS_PER_LONG == 32 时，如果word 为long 类型，bit 一定在 32 以内，
+ * 一定5-bit之内.
+ * (unsigned long)word << shift | bit 这么做的意思是，同一个word 的不同bit
+ * 会属于不同的等待队列.
+ */
 fastcall wait_queue_head_t *bit_waitqueue(void *word, int bit)
 {
 	const int shift = BITS_PER_LONG == 32 ? 5 : 6;

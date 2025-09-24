@@ -120,6 +120,7 @@ extern unsigned long nr_iowait(void);
 
 #define __set_current_state(state_value)			\
 	do { current->state = (state_value); } while (0)
+/* 设置之后使用内存屏障 */
 #define set_current_state(state_value)		\
 	set_mb(current->state, (state_value))
 

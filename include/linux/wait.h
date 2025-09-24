@@ -30,6 +30,11 @@ typedef struct __wait_queue wait_queue_t;
 typedef int (*wait_queue_func_t)(wait_queue_t *wait, unsigned mode, int sync, void *key);
 int default_wake_function(wait_queue_t *wait, unsigned mode, int sync, void *key);
 
+/*
+ * WQ_FLAG_EXCLUSIVE 互斥标识位.
+ * 互斥等待添加的时候会添加到队列末尾，唤醒的时候会根据nr_exclusive 设置唤醒对应个数的
+ * 互斥等待者.
+ */
 struct __wait_queue {
 	unsigned int flags;
 #define WQ_FLAG_EXCLUSIVE	0x01
@@ -144,14 +149,20 @@ static inline void __remove_wait_queue(wait_queue_head_t *head,
 }
 
 /* 唤醒函数 */
-void FASTCALL(__wake_up(wait_queue_head_t *q, unsigned int mode, int nr, void *key));
 /* 唤醒函数，已经获取锁的情况下调用 */
-extern void FASTCALL(__wake_up_locked(wait_queue_head_t *q, unsigned int mode));
 /*
  * 唤醒函数，同步唤醒.
  * 同步唤醒意思是当前进程马上就要让出CPU，如果被唤醒进程会运行在当前CPU上，
  * 不需要触发抢占.
  */
+
+/*
+ * __wake_up		唤醒函数
+ * __wake_up_locked	已经获取锁的情况下执行的唤醒函数
+ * __wake_up_sync	同步唤醒，当前进程立即让出CPU的情况下调用该函数
+ */
+void FASTCALL(__wake_up(wait_queue_head_t *q, unsigned int mode, int nr, void *key));
+extern void FASTCALL(__wake_up_locked(wait_queue_head_t *q, unsigned int mode));
 extern void FASTCALL(__wake_up_sync(wait_queue_head_t *q, unsigned int mode, int nr));
 void FASTCALL(__wake_up_bit(wait_queue_head_t *, void *, int));
 int FASTCALL(__wait_on_bit(wait_queue_head_t *, struct wait_bit_queue *, int (*)(void *), unsigned));
@@ -233,6 +244,7 @@ do {									\
  * The function returns 0 if the @timeout elapsed, and the remaining
  * jiffies if the condition evaluated to true before the timeout elapsed.
  */
+/* 等待，直到满足条件或者到时间 */
 #define wait_event_timeout(wq, condition, timeout)			\
 ({									\
 	long __ret = timeout;						\
@@ -241,6 +253,7 @@ do {									\
 	__ret;								\
 })
 
+/* 如果被信号中断，返回 ERESTARTSYS 错误 */
 #define __wait_event_interruptible(wq, condition, ret)			\
 do {									\
 	DEFINE_WAIT(__wait);						\
@@ -375,7 +388,7 @@ static inline void remove_wait_queue_locked(wait_queue_head_t *q,
 
 /*
  * These are the old interfaces to sleep waiting for an event.
- * They are racy.  DO NOT use them, use the wait_event* interfaces above.  
+ * They are racy.  DO NOT use them, use the wait_event* interfaces above.
  * We plan to remove these interfaces during 2.7.
  */
 extern void FASTCALL(sleep_on(wait_queue_head_t *q));
@@ -466,7 +479,7 @@ static inline int wait_on_bit_lock(void *word, int bit,
 		return 0;
 	return out_of_line_wait_on_bit_lock(word, bit, action, mode);
 }
-	
+
 #endif /* __KERNEL__ */
 
 #endif
