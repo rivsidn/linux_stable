@@ -101,6 +101,16 @@ void fastcall finish_wait(wait_queue_head_t *q, wait_queue_t *wait)
 {
 	unsigned long flags;
 
+	/*
+	 * 设置进程TASK_RUNNING 状态.
+	 *
+	 * 1. 正常休眠、唤醒情况下，进程已经是TASK_RUNNING 状态了，
+	 *    这里的更新可有可无.
+	 * 2. 有可能资源已经可用，但是设置为TASK_INTERRUPTIBLE 状态了，
+	 *    之后需要该函数更新状态.
+	 *    该进程已经是TASK_RUNNING状态了，其他CPU不会调度该进程.
+	 *    抢占状态下的进程切换由自己保证.
+	 */
 	__set_current_state(TASK_RUNNING);
 	/*
 	 * We can check for list emptiness outside the lock
@@ -123,6 +133,7 @@ void fastcall finish_wait(wait_queue_head_t *q, wait_queue_t *wait)
 }
 EXPORT_SYMBOL(finish_wait);
 
+/* 唤醒函数，唤醒之后自动从链表中删除 */
 int autoremove_wake_function(wait_queue_t *wait, unsigned mode, int sync, void *key)
 {
 	int ret = default_wake_function(wait, mode, sync, key);

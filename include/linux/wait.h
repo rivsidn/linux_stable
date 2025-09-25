@@ -88,6 +88,7 @@ static inline void init_waitqueue_head(wait_queue_head_t *q)
 	INIT_LIST_HEAD(&q->task_list);
 }
 
+/* 等待过程中可能需要某些特殊操作 */
 static inline void init_waitqueue_entry(wait_queue_t *q, struct task_struct *p)
 {
 	q->flags = 0;
@@ -206,6 +207,7 @@ do {									\
  * wake_up() has to be called after changing any variable that could
  * change the result of the wait condition.
  */
+/* 简单的等待，不需要做其他特殊操作 */
 #define wait_event(wq, condition) 					\
 do {									\
 	if (condition)	 						\
