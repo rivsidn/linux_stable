@@ -959,6 +959,9 @@ static inline int wake_idle(int cpu, task_t *p)
  *
  * returns failure only if the task is already active.
  */
+/*
+ * 成功唤醒返回 1
+ */
 static int try_to_wake_up(task_t * p, unsigned int state, int sync)
 {
 	int cpu, this_cpu, success = 0;
@@ -2894,6 +2897,12 @@ static void __wake_up_common(wait_queue_head_t *q, unsigned int mode,
 		unsigned flags;
 		curr = list_entry(tmp, wait_queue_t, task_list);
 		flags = curr->flags;
+		/*
+		 * 退出需要同时满足3个条件:
+		 * 1. 唤醒成功
+		 * 2. 互斥模式
+		 * 3. 已经满足要求唤醒的个数
+		 */
 		if (curr->func(curr, mode, sync, key) &&
 		    (flags & WQ_FLAG_EXCLUSIVE) &&
 		    !--nr_exclusive)
