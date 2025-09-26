@@ -150,6 +150,13 @@ int wake_bit_function(wait_queue_t *wait, unsigned mode, int sync, void *arg)
 	struct wait_bit_queue *wait_bit
 		= container_of(wait, struct wait_bit_queue, wait);
 
+	/*
+	 * 唤醒时检查.
+	 *
+	 * 1. 检查唤醒的指针
+	 * 2. 检查bit 位是否正确
+	 * 3. bit 是否正确设置
+	 */
 	if (wait_bit->key.flags != key->flags ||
 			wait_bit->key.bit_nr != key->bit_nr ||
 			test_bit(key->bit_nr, key->flags))
@@ -164,6 +171,7 @@ EXPORT_SYMBOL(wake_bit_function);
  * waiting, the actions of __wait_on_bit() and __wait_on_bit_lock() are
  * permitted return codes. Nonzero return codes halt waiting and return.
  */
+/* 可以同时唤醒多个 */
 int __sched fastcall
 __wait_on_bit(wait_queue_head_t *wq, struct wait_bit_queue *q,
 			int (*action)(void *), unsigned mode)
@@ -193,6 +201,7 @@ int __sched fastcall out_of_line_wait_on_bit(void *word, int bit,
 }
 EXPORT_SYMBOL(out_of_line_wait_on_bit);
 
+/* 只可以唤醒一个 */
 int __sched fastcall
 __wait_on_bit_lock(wait_queue_head_t *wq, struct wait_bit_queue *q,
 			int (*action)(void *), unsigned mode)
@@ -246,7 +255,40 @@ EXPORT_SYMBOL(__wake_up_bit);
  * may need to use a less regular barrier, such fs/inode.c's smp_mb(),
  * because spin_unlock() does not guarantee a memory barrier.
  */
-/* TODO: 没弄明白这里内存屏障的使用 */
+/*
+ * 唤醒:
+ * clear_bit();
+ *
+ * smp_mb__after_clear_bit();
+ *
+ * if (waitqueue_active(wq)) {
+ * 	spin_lock_irqsave();
+ * 	list_for_each_safe() {
+ * 		<write_barrier>;
+ * 		current->state = TASK_RUNNING;
+ * 	}
+ * 	spin_unlock_irqrestore();
+ * }
+ *
+ * 休眠:
+ * for (;;) {
+ * 	spin_lock_irqsave();
+ * 	add_wait_queue();
+ * 	current->state = TASK_INTERRUPTIBLE;
+ * 	<general barrier>;
+ * 	spin_unlock_irqrestore();
+ *
+ * 	if (test_bit())
+ * 		break;
+ * 	schedule();
+ * }
+ *
+ * finish_wait();
+ *
+ * clear_bit 仅仅保证自身的原子性，并不提供内存屏障保证(编译器乱序、CPU乱序执行)，
+ * 如上所示，clear_bit()、if(waitqueue_active(wq)) {} 之间并不存在因果关系，所以
+ * 这里可能会出现乱序问题，需要内存屏障保证.
+ */
 void fastcall wake_up_bit(void *word, int bit)
 {
 	__wake_up_bit(bit_waitqueue(word, bit), word, bit);

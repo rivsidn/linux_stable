@@ -74,6 +74,7 @@ static inline void __set_bit(int nr, volatile unsigned long * addr)
  * you should call smp_mb__before_clear_bit() and/or smp_mb__after_clear_bit()
  * in order to ensure changes are visible on other processors.
  */
+/* 并不提供内存屏障保证 */
 static inline void clear_bit(int nr, volatile unsigned long * addr)
 {
 	__asm__ __volatile__( LOCK_PREFIX

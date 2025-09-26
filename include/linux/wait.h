@@ -43,6 +43,10 @@ struct __wait_queue {
 	struct list_head task_list;
 };
 
+/*
+ * @flags:  检测的地址
+ * @bit_nr: 要唤醒的bit
+ */
 struct wait_bit_key {
 	void *flags;
 	int bit_nr;
