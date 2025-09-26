@@ -143,6 +143,50 @@ Furthermore, the stores committed by a CPU to the memory system may not be
 perceived by the loads made by another CPU in the same order as the stores were
 committed.
 
+> ● 这段话描述了一个重要的硬件特性：一个 CPU 
+>   写入内存的顺序，可能与另一个 CPU 
+>   读取时看到的顺序不一致。
+> 
+>   具体原因：
+> 
+>   1. Store Buffer（写缓冲区）
+> 
+>   - CPU 写入数据时，先写到本地的 store
+>   buffer，而不是直接写到内存
+>   - Store buffer 中的数据可能乱序刷新到内存
+>   - 例如：CPU1 先写 A=1，再写 B=2，但 B=2
+>   可能先到达内存
+> 
+>   2. 缓存一致性协议的延迟
+> 
+>   - 现代 CPU 使用 MESI 等缓存一致性协议
+>   - 写操作需要获取缓存行的独占权，这个过程有延迟
+>   -
+>   不同缓存行的独占权获取时间不同，导致写入顺序改变
+> 
+>   3. 内存系统的并行性
+> 
+>   - 内存控制器可以并行处理多个请求
+>   - 不同地址的内存访问可能走不同的通道
+>   - 后发出的请求可能先完成
+> 
+>   4. CPU 的写合并和写重排
+> 
+>   - CPU 可能将多个小写操作合并成一个大写操作
+>   - CPU 可能重新排序写操作以提高效率
+> 
+>   实际例子：
+> 
+>   // CPU1 执行：
+>   A = 1;  // 先写
+>   B = 2;  // 后写
+> 
+>   // CPU2 可能看到：
+>   // B = 2 (先看到)
+>   // A = 1 (后看到)
+> 
+>   这就是为什么多核编程需要内存屏障来保证顺序的原因
+>   。
 
 As a further example, consider this sequence of events:
 
@@ -205,6 +249,52 @@ There are some minimal guarantees that may be expected of a CPU:
      and WRITE_ONCE() are required to prevent compiler mischief.  Please
      note that you should normally use something like rcu_dereference()
      instead of open-coding smp_read_barrier_depends().
+
+>    说明一下Alpha 这个过程.
+>
+>    Alpha 内部有一个地址预测表.
+>
+>   ┌─────────────┬──────────────┬────────────┐
+>   │ 指令地址    │ 历史值       │ 置信度     │
+>   ├─────────────┼──────────────┼────────────┤
+>   │ 0x1000(Q=P) │ 0x2000(&A)   │ 高         │
+>   │ 0x1004(*Q)  │预测从0x2000读│            │
+>   └─────────────┴──────────────┴────────────┘
+>
+>   CPU 获取值的时候，会根据指令地址提前预测Q 的历史值，并通过历史值去读获取值. 
+>   正常情况下，当预测失败的时候，CPU 会重新通过正确的P 值获取.
+>   在下边情况下，CPU 不会重读.
+>   在下边情况下，CPU 不会重读：
+>   - 多核（SMP）系统
+>   - 预测的地址在本地缓存中仍有数据
+>   - 该地址曾经是有效的（不是野指针）
+> 
+>   // Alpha 的逻辑（简化）
+>   if (预测地址 != 实际地址) {
+>       if (预测地址在本地缓存中仍有效) {
+>           // 设计决策：使用缓存的值
+>           // 理由：程序员没加屏障，自己负责
+>           使用已缓存的值();  // 这是特性，不是 bug
+>       } else {
+>           重新读取();
+>       }
+>   }
+>   不是竞争条件（race condition），而是确定性的行为：
+>
+>   具体例子：
+>   CPU1: P = &B  (从 &A 改为 &B)
+>   CPU2 (Alpha): 
+>     Q = P;     // 读到 &B
+>     D = *Q;    // 但可能返回 A 的值！
+>
+>   这不是 bug，而是 Alpha 架构师的故意选择：
+>   - 优先性能
+>   - 把正确性责任推给软件
+>   - 要求程序员显式使用内存屏障
+
+     这样看起来也合理，毕竟多核情况理论上通常通过锁来保证数据一致性，
+     如果程序员需要不依赖锁多个CPU 核之间使用全局变量，我们认为这个
+     是高手，自己承担后果.
 
  (*) Overlapping loads and stores within a particular CPU will appear to be
      ordered within that CPU.  This means that for:
@@ -389,6 +479,21 @@ Memory barriers come in four basic varieties:
      a full read barrier or better is required.  See the "Control dependencies"
      subsection for more information.
 
+>   您提供的文本指出了关键区别：
+> 
+>    1. 数据依赖 (Data Dependency)：第二个加载操作的 地址 本身是由第一个加载操作的值决定的。
+>        * 例子：p = *a; load from *p;
+>        * 这里，第二个加载操作的地址 p 直接来自 *a 的值。这种依赖关系在很多CPU架构上能自然地保证顺序，不需要额外的内存屏障。
+> 
+>    2. 控制依赖 (Control Dependency)：第二个加载操作的执行 与否 取决于第一个加载操作的值，但加载的 地址是固定的。
+>        * 例子：tmp = *a; if (tmp) { load from *b; }
+>        * 这里，是否要从 *b 加载数据，取决于 tmp 的值（也就是 *a 的值）。但是加载的地址 *b 和 *a 本身没有数据关系。
+
+>   - 控制依赖 = 第一次 load 的值用于条件判断
+>   - 数据依赖 = 第一次 load 的值用于地址计算
+>
+>     推测执行 (Speculative Execution)
+
      [!] Note that data dependency barriers should normally be paired with
      write barriers; see the "SMP barrier pairing" subsection.
 
@@ -432,6 +537,29 @@ And a couple of implicit varieties:
      ACQUIRE operation with respect to the other components of the system.
      ACQUIRE operations include LOCK operations and smp_load_acquire()
      operations.
+
+>    smp_rmb() 的行为：
+>    ────────────────────────────────
+>    A = *A;
+>       ↓
+>    smp_rmb():
+>      1. 立即处理所有 Invalid Queue
+>      2. 等待所有之前的读取完成
+>      3. 阻止后续读取开始
+>       ↓
+>    B = *B;
+>  
+>  
+>    smp_load_acquire() 的行为：
+>    ────────────────────────────────
+>    A = *A;  // 可能还没完成
+>       ↓
+>    val = smp_load_acquire(&flag):
+>      1. 处理与 flag 相关的 Invalid Queue
+>      2. 读取 flag
+>      3. 只阻止后续操作提前（不管之前的）
+>       ↓
+>    B = *B;  // 必须在 acquire 之后
 
      Memory operations that occur before an ACQUIRE operation may appear to
      happen after it completes.
@@ -508,7 +636,7 @@ There are certain things that the Linux kernel memory barriers do not guarantee:
 	    Documentation/DMA-API.txt
 
 
-DATA DEPENDENCY BARRIERS
+DATA DEPENDENCY BARRIERS 数据依赖屏障
 ------------------------
 
 The usage requirements of data dependency barriers are a little subtle, and
@@ -538,6 +666,7 @@ leading to the following situation:
 Whilst this may seem like a failure of coherency or causality maintenance, it
 isn't, and this behaviour can be observed on certain real CPUs (such as the DEC
 Alpha).
+虽然这看上去是一致性和因果关系的失败，但这确实在某些实际的CPU上存在(DEC Alpha).
 
 To deal with this, a data dependency barrier or better must be inserted
 between the address load and the data load:
@@ -568,6 +697,7 @@ but the old value of the variable B (2).
 Another example of where data dependency barriers might be required is where a
 number is read from memory and then used to calculate the index for an array
 access:
+数据依赖屏障的另一个例子，获取到的值用于地址计算:
 
 	CPU 1		      CPU 2
 	===============	      ===============
@@ -589,7 +719,7 @@ target appearing to be incompletely initialised.
 See also the subsection on "Cache Coherency" for a more thorough example.
 
 
-CONTROL DEPENDENCIES
+CONTROL DEPENDENCIES 控制依赖
 --------------------
 
 A load-load control dependency requires a full read memory barrier, not
@@ -602,6 +732,7 @@ following bit of code:
 		p = READ_ONCE(b);
 	}
 
+这里并不存在实际的数据依赖关系，可能会出现提前预测 b 值的情况.
 This will not have the desired effect because there is no actual data
 dependency, but rather a control dependency that the CPU may short-circuit
 by attempting to predict the outcome in advance, so that other CPUs see
@@ -616,6 +747,7 @@ case what's actually required is:
 
 However, stores are not speculated.  This means that ordering -is- provided
 for load-store control dependencies, as in the following example:
+写操作并不会预测执行，所以这里的代码是没问题的.
 
 	q = READ_ONCE(a);
 	if (q) {
@@ -627,6 +759,7 @@ said, please note that READ_ONCE() is not optional! Without the
 READ_ONCE(), the compiler might combine the load from 'a' with other
 loads from 'a', and the store to 'b' with other stores to 'b', with
 possible highly counterintuitive effects on ordering.
+此处的READ_ONCE() 是为了防止编译器优化.
 
 Worse yet, if the compiler is able to prove (say) that the value of
 variable 'a' is always non-zero, it would be well within its rights
@@ -643,7 +776,7 @@ branches of the "if" statement as follows:
 
 	q = READ_ONCE(a);
 	if (q) {
-		barrier();
+		barrier();			//编译器屏障，不影响CPU优化
 		WRITE_ONCE(b, p);
 		do_something();
 	} else {
@@ -666,6 +799,9 @@ optimization levels:
 		do_something_else();
 	}
 
+写操作的时候，本身能够确保数据间一致性，并不会出现乱序问题.
+由于将WRITE_ONCE()从判断中移除之后，不在存在条件依赖，此时就可能会出现乱序问题.
+
 Now there is no conditional between the load from 'a' and the store to
 'b', which means that the CPU is within its rights to reorder them:
 The conditional is absolutely required, and must be present in the
@@ -682,6 +818,8 @@ memory barriers, for example, smp_store_release():
 		do_something_else();
 	}
 
+使用内存屏障的情况下，即使存在编译器优化，也能保证CPU 正确的执行顺序.
+
 In contrast, without explicit memory barriers, two-legged-if control
 ordering is guaranteed only when the stores differ, for example:
 
@@ -696,6 +834,7 @@ ordering is guaranteed only when the stores differ, for example:
 
 The initial READ_ONCE() is still required to prevent the compiler from
 proving the value of 'a'.
+依旧需要READ_ONCE() 保证编译器正确获取'a' 的值.
 
 In addition, you need to be careful what you do with the local variable 'q',
 otherwise the compiler might be able to guess the value and again remove
@@ -717,6 +856,8 @@ transform the above code into the following:
 	q = READ_ONCE(a);
 	WRITE_ONCE(b, p);
 	do_something_else();
+
+防止编译器优化，使控制依赖失效.
 
 Given this transformation, the CPU is not required to respect the ordering
 between the load from variable 'a' and the store to variable 'b'.  It is
@@ -750,6 +891,8 @@ Because the first condition cannot fault and the second condition is
 always true, the compiler can transform this example as following,
 defeating control dependency:
 
+转换后不存在控制依赖:
+
 	q = READ_ONCE(a);
 	WRITE_ONCE(b, 1);
 
@@ -758,6 +901,9 @@ out-guess your code.  More generally, although READ_ONCE() does force
 the compiler to actually emit code for a given load, it does not force
 the compiler to use the results.
 
+READ_ONCE()会强制编译器生成真实的load 代码，但是不保证编译器使用load 的结果.
+
+控制依赖之间并不保证传递性.
 Finally, control dependencies do -not- provide transitivity.  This is
 demonstrated by two related examples, with the initial values of
 x and y both being zero:
@@ -787,6 +933,261 @@ between the loads and stores in the CPU 0 and CPU 1 code fragments,
 that is, just before or just after the "if" statements.  Furthermore,
 the original two-CPU example is very fragile and should be avoided.
 
+>   什么是传递性？
+> 
+>   如果控制依赖有传递性，意味着：
+>   - 如果 A 依赖于 B，B 依赖于 C
+>   - 那么应该存在一个从 C 到 A 的确定顺序链
+>   - 这个顺序链应该阻止某些"循环"的发生
+> 
+>   两个例子的对比
+> 
+>   例子1：两个 CPU（没问题）
+> 
+>   // 初始：x = 0, y = 0
+> 
+>   CPU 0:                    CPU 1:
+>   r1 = READ_ONCE(x);       r2 = READ_ONCE(y);
+>   if (r1 > 0)              if (r2 > 0)
+>     WRITE_ONCE(y, 1);        WRITE_ONCE(x, 1);
+> 
+>   // 不可能：r1 == 1 && r2 == 1
+> 
+>   为什么不可能？因为存在循环依赖：
+>   - CPU0 需要看到 x > 0 才写 y
+>   - CPU1 需要看到 y > 0 才写 x
+>   - 初始都是 0，所以无法启动
+> 
+>   例子2：三个 CPU（有问题）
+> 
+>   CPU 0:                    CPU 1:                   CPU 2:
+>   r1 = READ_ONCE(x);       r2 = READ_ONCE(y);       WRITE_ONCE(x, 2);
+>   if (r1 > 0)              if (r2 > 0)
+>     WRITE_ONCE(y, 1);        WRITE_ONCE(x, 1);
+> 
+>   // 可能：r1 == 2 && r2 == 1 && x == 2
+> 
+>   CPU2 打破了循环！现在可能的执行：
+>   1. CPU2 写 x = 2
+>   2. CPU0 读到 x = 2，满足条件，写 y = 1
+>   3. CPU1 读到 y = 1，满足条件，写 x = 1
+>   4. 但最终 x 可能仍是 2！
+> 
+>   传递性失败的核心
+> 
+>   如果控制依赖有传递性（假设）
+> 
+>   期望的逻辑链：
+>   CPU2 写 x=2
+>       ↓ (happens-before)
+>   CPU0 读到 x=2，写 y=1
+>       ↓ (happens-before)
+>   CPU1 读到 y=1，写 x=1
+>       ↓ (happens-before)
+>   最终 x 必须是 1（因为 CPU1 的写在最后）
+> 
+>   实际情况（无传递性）
+> 
+>   实际可能发生：
+>   CPU2: x = 2 ──────────────┐
+>                             ↓
+>   CPU0: 读 x=2 → 写 y=1     │
+>            ↓                │
+>   CPU1: 读 y=1 → 写 x=1     │
+>            ↓                │
+>       x 的最终值 ←──────────┘
+> 
+>   最终 x 可能是 1 或 2，取决于写入的实际完成顺序
+> 
+>   具体时序分析
+> 
+>   时刻  CPU0           CPU1           CPU2         内存状态
+>   T0                                              x=0, y=0
+>   T1                                  x=2         x=2, y=0
+>   T2    r1=READ(x)                                读到 2
+>   T3    if(2>0) 成立
+>   T4    WRITE(y,1)                                x=2, y=1
+>   T5                   r2=READ(y)                 读到 1
+>   T6                   if(1>0) 成立
+>   T7                   WRITE(x,1)                 写入 store buffer
+>   T8    store buffer 刷新                         x=2, y=1
+>   T9                   store buffer 刷新          x=? (1或2)
+> 
+>   关键：CPU1 的 WRITE(x,1) 和 CPU2 的 x=2 之间没有确定的顺序！
+> 
+>   为什么叫"没有传递性"？
+> 
+>   有传递性的情况（使用 smp_mb）
+> 
+>   CPU0:                CPU1:                CPU2:
+>   r1 = READ(x);       r2 = READ(y);       WRITE(x, 2);
+>   smp_mb();           smp_mb();
+>   if(r1>0)            if(r2>0)
+>     WRITE(y,1);         WRITE(x,1);
+> 
+>   // smp_mb() 保证了传递性
+>   // 如果 CPU1 看到 y=1，它的写 x=1 一定在 CPU2 的 x=2 之后
+
+>  有传递性的情况（使用 smp_mb）
+>     CPU0:                CPU1:                CPU2:
+>     r1 = READ(x);       r2 = READ(y);       WRITE(x, 2);
+>     smp_mb();           smp_mb();
+>     if(r1>0)            if(r2>0)
+>       WRITE(y,1);         WRITE(x,1);
+>   这里是如何保证传递性的呢
+> 
+> ● 好问题！让我详细解释 smp_mb() 如何保证传递性：
+> 
+>   smp_mb() 的保证
+> 
+>   smp_mb() 提供**全序（total order）**保证：
+>   1. 屏障前的所有操作必须在屏障后的操作之前完成
+>   2. 所有 CPU 看到的顺序是一致的
+> 
+>   有 smp_mb() 时的执行分析
+> 
+>   CPU0:                CPU1:                CPU2:
+>   r1 = READ(x);       r2 = READ(y);       WRITE(x, 2);
+>   smp_mb();           smp_mb();
+>   if(r1>0)            if(r2>0)
+>     WRITE(y,1);         WRITE(x,1);
+> 
+>   关键保证
+> 
+>   CPU0 的保证：
+>   - 如果 r1 读到了 2（来自 CPU2）
+>   - smp_mb() 确保这个读取完全完成
+>   - 然后才能写 y=1
+> 
+>   CPU1 的保证：
+>   - 如果 r2 读到了 1（来自 CPU0）
+>   - smp_mb() 确保这个读取完全完成
+>   - 然后才能写 x=1
+> 
+>   时序分析
+> 
+>   情况1：如果断言的条件成立
+> 
+>   假设：r1==2, r2==1, 我们要看最终 x 是否可能是 2。
+> 
+>   时序：
+>   T1: CPU2: WRITE(x, 2) ───→ x=2 进入内存
+>                              ↓
+>   T2: CPU0: READ(x) ────────→ r1 = 2
+>   T3: CPU0: smp_mb() ──────→ 确保 T2 完全完成
+>   T4: CPU0: WRITE(y,1) ────→ y=1 进入内存
+>                              ↓
+>   T5: CPU1: READ(y) ────────→ r2 = 1
+>   T6: CPU1: smp_mb() ──────→ 确保 T5 完全完成
+>   T7: CPU1: WRITE(x,1) ────→ x=1 必须在 T6 之后
+> 
+>   关键：全局顺序
+> 
+>   smp_mb() 建立的全局顺序：
+> 
+>   CPU2 写 x=2
+>       ↓ (happens-before)
+>   CPU0 读到 x=2
+>       ↓ (smp_mb 保证)
+>   CPU0 写 y=1
+>       ↓ (happens-before)
+>   CPU1 读到 y=1
+>       ↓ (smp_mb 保证)
+>   CPU1 写 x=1
+> 
+>   因此：CPU1 的 x=1 必须在 CPU2 的 x=2 之后
+>   最终 x 必须是 1，不可能是 2！
+> 
+>   与控制依赖的对比
+> 
+>   控制依赖（无传递性）
+> 
+>   CPU0:                CPU1:
+>   r1 = READ(x);       r2 = READ(y);
+>   if(r1>0)            if(r2>0)      // 只保证本地顺序
+>     WRITE(y,1);         WRITE(x,1);  // 可能与 CPU2 的写并发
+> 
+>   // CPU1 的写和 CPU2 的写没有确定顺序
+> 
+>   smp_mb()（有传递性）
+> 
+>   CPU0:                CPU1:
+>   r1 = READ(x);       r2 = READ(y);
+>   smp_mb();           smp_mb();      // 创建全局同步点
+>   if(r1>0)            if(r2>0)
+>     WRITE(y,1);         WRITE(x,1);  // 必须在所有之前的操作完成后
+> 
+>   // CPU1 的写必须在看到 CPU0 的写之后
+>   // CPU0 的写必须在看到 CPU2 的写之后
+>   // 因此形成了全序
+> 
+>   硬件层面的实现
+> 
+>   smp_mb() 的硬件效果
+> 
+>   CPU0 执行 smp_mb()：
+>   1. 刷新 Store Buffer
+>   2. 处理 Invalid Queue
+>   3. 等待所有未完成的内存操作
+>   4. 与其他 CPU 同步
+> 
+>   CPU1 执行 smp_mb()：
+>   1. 同样的操作
+>   2. 确保看到 CPU0 的所有更改
+>   3. 包括 CPU0 看到的 CPU2 的更改
+> 
+>   缓存一致性协议的作用
+> 
+>   MESI 协议 + smp_mb()：
+> 
+>   CPU2: x=2 (Modified)
+>     ↓
+>   CPU0: 读 x，获得 x=2 (Shared)
+>   CPU0: smp_mb() → 同步点
+>   CPU0: y=1 (Modified)
+>     ↓
+>   CPU1: 读 y，获得 y=1 (Shared)
+>   CPU1: smp_mb() → 同步点
+>   CPU1: x=1 (Modified) → 必须使 CPU2 的 x=2 无效
+> 
+>   最终：x=1（CPU1 的值）
+> 
+>   数学证明
+> 
+>   定义 → 为 happens-before 关系：
+> 
+>   给定：
+>   - A: CPU2 写 x=2
+>   - B: CPU0 读 x (r1=2)
+>   - C: CPU0 写 y=1
+>   - D: CPU1 读 y (r2=1)
+>   - E: CPU1 写 x=1
+> 
+>   关系链：
+>   A → B (因果关系)
+>   B → C (smp_mb 保证)
+>   C → D (因果关系)
+>   D → E (smp_mb 保证)
+> 
+>   传递性：
+>   A → B → C → D → E
+>   因此：A → E
+>   即：CPU2 的 x=2 happens-before CPU1 的 x=1
+> 
+>   结论：最终 x=1
+> 
+>   总结
+> 
+>   smp_mb() 保证传递性的方式：
+>   1. 创建全局同步点：所有 CPU 都认同的顺序
+>   2. 刷新所有缓冲：确保之前的操作全部可见
+>   3. 建立 happens-before 链：形成可传递的顺序
+>   4. 防止重排序：CPU 和编译器都不能打乱顺序
+> 
+>   因此，使用 smp_mb() 后，断言 !(r1==2 && r2==1 && x==2) 永远成立，因为如果 r1==2 且 r2==1，则 x 必须是 1。
+
+控制依赖不能明确保证内存的执行顺序.
+
 These two examples are the LB and WWC litmus tests from this paper:
 http://www.cl.cam.ac.uk/users/pes20/ppc-supplemental/test6.pdf and this
 site: https://www.cl.cam.ac.uk/~pes20/ppcmem/index.html.
@@ -799,6 +1200,8 @@ In summary:
       later anything.  If you need these other forms of ordering,
       use smp_rmb(), smp_wmb(), or, in the case of prior stores and
       later loads, smp_mb().
+      控制依赖能够保证 load在前、store在后的顺序.
+      但是不提供其他任何形式的保证: load在前、load在后，store在前的所有.
 
   (*) If both legs of the "if" statement begin with identical stores
       to the same variable, a barrier() statement is required at the
@@ -810,6 +1213,7 @@ In summary:
       to optimize the conditional away, it will have also optimized
       away the ordering.  Careful use of READ_ONCE() and WRITE_ONCE()
       can help to preserve the needed conditional.
+      如果将条件分支优化掉了，则条件依赖就不生效了.
 
   (*) Control dependencies require that the compiler avoid reordering the
       dependency into nonexistence.  Careful use of READ_ONCE() or
@@ -820,6 +1224,7 @@ In summary:
 
   (*) Control dependencies do -not- provide transitivity.  If you
       need transitivity, use smp_mb().
+      控制依赖不保证传递性，如果需要保证传递性，使用smp_mb().
 
 
 SMP BARRIER PAIRING
@@ -827,6 +1232,8 @@ SMP BARRIER PAIRING
 
 When dealing with CPU-CPU interactions, certain types of memory barrier should
 always be paired.  A lack of appropriate pairing is almost certainly an error.
+
+屏障之间可以配对使用.
 
 General barriers pair with each other, though they also pair with most
 other types of barriers, albeit without transitivity.  An acquire barrier
@@ -845,6 +1252,7 @@ barrier, an acquire barrier, a release barrier, or a general barrier:
 			      <read barrier>
 			      y = READ_ONCE(a);
 
+	写屏障-读屏障: a 一定在b 之前更新，如果查看到b 的值更新了，则 a 的值一定是新的.
 Or:
 
 	CPU 1		      CPU 2
@@ -855,18 +1263,21 @@ Or:
 			      <data dependency barrier>
 			      y = *x;
 
+	写屏障-数据依赖屏障: 确定数据之间的数据依赖关系.
 Or even:
 
 	CPU 1		      CPU 2
 	===============	      ===============================
 	r1 = READ_ONCE(y);
 	<general barrier>
-	WRITE_ONCE(y, 1);     if (r2 = READ_ONCE(x)) {
+	WRITE_ONCE(x, 1);     if (r2 = READ_ONCE(x)) {
 			         <implicit control dependency>
 			         WRITE_ONCE(y, 1);
 			      }
 
 	assert(r1 == 0 || r2 == 0);
+
+	通用内存屏障-控制依赖屏障: 保证了执行顺序.
 
 Basically, the read barrier always has to be there, even though it can be of
 the "weaker" type.
@@ -1154,8 +1565,10 @@ The guarantee is that the second load will always come up with A == 1 if the
 load of B came up with B == 2.  No such guarantee exists for the first load of
 A; that may come up with either A == 0 or A == 1.
 
+此处保证B == 2 时必定 A == 1.
+第一次加载时，A == 0、A == 1 都有可能.
 
-READ MEMORY BARRIERS VS LOAD SPECULATION
+READ MEMORY BARRIERS VS LOAD SPECULATION 读内存屏障和预测加载
 ----------------------------------------
 
 Many CPUs speculate with loads: that is they see that they will need to load an
@@ -1196,8 +1609,8 @@ Which might appear as this:
 	LOAD with immediate effect              :       :       +-------+
 
 
-Placing a read barrier or a data dependency barrier just before the second
-load:
+Placing a read barrier or a data dependency barrier just before the second load:
+读屏障或者数据依赖屏障:
 
 	CPU 1			CPU 2
 	=======================	=======================
@@ -1252,7 +1665,7 @@ the speculation will be cancelled and the value reloaded:
 	retrieved                               :       :       +-------+
 
 
-TRANSITIVITY
+TRANSITIVITY 传递性
 ------------
 
 Transitivity is a deeply intuitive notion about ordering that is not
@@ -1265,6 +1678,8 @@ demonstrates transitivity (also called "cumulativity"):
 	STORE X=1		LOAD X			STORE Y=1
 				<general barrier>	<general barrier>
 				LOAD Y			LOAD X
+
+	CPU2 感知到 X = 1 时，CPU1 一定发送了 invalidate 消息.
 
 Suppose that CPU 2's load from X returns 1 and its load from Y returns 0.
 This indicates that CPU 2's load from X in some sense follows CPU 1's
@@ -1282,6 +1697,8 @@ In the Linux kernel, use of general memory barriers guarantees
 transitivity.  Therefore, in the above example, if CPU 2's load from X
 returns 1 and its load from Y returns 0, then CPU 3's load from X must
 also return 1.
+
+内核中，通过通用内存屏障保证传递性.
 
 However, transitivity is -not- guaranteed for read or write barriers.
 For example, suppose that CPU 2's general barrier in the above example
@@ -1305,8 +1722,11 @@ or a level of cache, CPU 2 might have early access to CPU 1's writes.
 General barriers are therefore required to ensure that all CPUs agree
 on the combined order of CPU 1's and CPU 2's accesses.
 
+CPU 和store buffer 之间并非是简单的一一对应关系.
+
 To reiterate, if your code requires transitivity, use general barriers
 throughout.
+如果需要保证代码间的传递性，使用通用内存屏障.
 
 
 ========================
@@ -1316,14 +1736,14 @@ EXPLICIT KERNEL BARRIERS
 The Linux kernel has a variety of different barriers that act at different
 levels:
 
-  (*) Compiler barrier.
+  (*) Compiler barrier(编译器屏障).
 
-  (*) CPU memory barriers.
+  (*) CPU memory barriers(CPU 内存屏障).
 
-  (*) MMIO write barrier.
+  (*) MMIO write barrier(MMIO 写屏障).
 
 
-COMPILER BARRIER
+COMPILER BARRIER 编译器屏障
 ----------------
 
 The Linux kernel has an explicit compiler barrier function that prevents the
@@ -1336,12 +1756,50 @@ variants of barrier().  However, READ_ONCE() and WRITE_ONCE() can be
 thought of as weak forms of barrier() that affect only the specific
 accesses flagged by the READ_ONCE() or WRITE_ONCE().
 
+```c
+    x = 1;
+    barrier();
+    y = 2;
+```
+对于 x, y 的访问不能越过 barrier().
+
+```c
+  // 源代码
+  x = 1;
+  WRITE_ONCE(shared, 2);  // 相当于 *(volatile int*)&shared = 2
+  y = 3;
+```
+
+编译器看到的约束：
+1. volatile 访问不能被优化掉
+2. volatile 访问之间保持顺序
+3. 普通访问可以自由重排
+
 The barrier() function has the following effects:
 
  (*) Prevents the compiler from reordering accesses following the
      barrier() to precede any accesses preceding the barrier().
      One example use for this property is to ease communication between
      interrupt-handler code and the code that was interrupted.
+     防止编译器重排.
+
+     ```c
+     //interrupted
+     void normal(void)
+     {
+         data = 1;
+	 barrier();
+	 flag = 1;
+     }
+     //interrupt-handler
+     void handler(void)
+     {
+         if (flag) {	//数据初始化完成
+             use_data();
+         }
+     }
+     ```
+     如果没有barrier() ，编译器重排可能会导致数据混乱.
 
  (*) Within a loop, forces the compiler to load the variables used
      in that loop's conditional on each pass through that loop.
@@ -1355,6 +1813,7 @@ of optimizations:
      to the same variable, and in some cases, the CPU is within its
      rights to reorder loads to the same variable.  This means that
      the following code:
+     对同一个变量的加载可能会重排:
 
 	a[0] = x;
 	a[1] = x;
@@ -1367,10 +1826,12 @@ of optimizations:
 
      In short, READ_ONCE() and WRITE_ONCE() provide cache coherence for
      accesses from multiple CPUs to a single variable.
+     仅防止编译器优化，不保证一致性.
 
  (*) The compiler is within its rights to merge successive loads from
      the same variable.  Such merging can cause the compiler to "optimize"
      the following code:
+     对同一个变量的连续访问可能会被合并:
 
 	while (tmp = a)
 		do_something_with(tmp);
@@ -1406,6 +1867,8 @@ of optimizations:
      passing a zero to do_something_with() in the case where the variable
      a was modified by some other CPU between the "while" statement and
      the call to do_something_with().
+     本身tmp 是一个局部变量，优化之后，如果 a 是一个全局变量，就可能会导致
+     出问题.
 
      Again, use READ_ONCE() to prevent the compiler from doing this:
 
@@ -1442,6 +1905,7 @@ of optimizations:
      But please note that the compiler is also closely watching what you
      do with the value after the READ_ONCE().  For example, suppose you
      do the following and MAX is a preprocessor macro with the value 1:
+     编译器依旧会仔细审视READ_ONCE() 获取的数值，并提出优化方案.
 
 	while ((tmp = READ_ONCE(a)) % MAX)
 		do_something_with(tmp);
@@ -1457,6 +1921,8 @@ of optimizations:
      storing into the variable, which can cause the compiler to do the
      wrong thing for shared variables.  For example, suppose you have
      the following:
+     编译器会假定当前CPU 是唯一一个会修改该变量的核，如果变量是多核共享的
+     就会出现问题.
 
 	a = 0;
 	/* Code that does not store to variable a. */
@@ -1529,6 +1995,7 @@ of optimizations:
      You should assume that the compiler can move READ_ONCE() and
      WRITE_ONCE() past code not containing READ_ONCE(), WRITE_ONCE(),
      barrier(), or similar primitives.
+     编译器仅仅保证 READ_ONCE() WRITE_ONCE() barrier() 之间顺序.
 
      This effect could also be achieved using barrier(), but READ_ONCE()
      and WRITE_ONCE() are more selective:  With READ_ONCE() and
@@ -1538,6 +2005,10 @@ of optimizations:
      cached in any machine registers.  Of course, the compiler must also
      respect the order in which the READ_ONCE()s and WRITE_ONCE()s occur,
      though the CPU of course need not do so.
+
+     编译器会缓存变量到寄存器
+     READ_ONCE/WRITE_ONCE：选择性遗忘，只忘记特定位置
+     barrier()：全部丢弃，必须忘记所有缓存
 
  (*) The compiler is within its rights to invent stores to a variable,
      as in the following example:
@@ -1568,6 +2039,7 @@ of optimizations:
      damaging, but they can result in cache-line bouncing and thus in
      poor performance and scalability.  Use READ_ONCE() to prevent
      invented loads.
+     也可能会引入Load. 并没有那么严重，可能会影响性能.
 
  (*) For aligned memory locations whose size allows them to be accessed
      with a single memory-reference instruction, prevents "load tearing"
@@ -1576,6 +2048,8 @@ of optimizations:
      16-bit store instructions with 7-bit immediate fields, the compiler
      might be tempted to use two 16-bit store-immediate instructions to
      implement the following 32-bit store:
+     对于一个大的内存地址，如果可能会拆分成多个小的内存地址访问，就可能
+     会出现撕裂.
 
 	p = 0x00010002;
 
@@ -1588,6 +2062,8 @@ of optimizations:
      use of WRITE_ONCE() prevents store tearing in the following example:
 
 	WRITE_ONCE(p, 0x00010002);
+
+     WRITE_ONCE() 用于避免存储撕裂.
 
      Use of packed structures can also result in load and store tearing,
      as in this example:
@@ -1611,6 +2087,8 @@ of optimizations:
      load tearing on 'foo1.b' and store tearing on 'foo2.b'.  READ_ONCE()
      and WRITE_ONCE() again prevent tearing in this example:
 
+     也就是说 int b 是分两次写入的，可能会导致撕裂.
+
 	foo2.a = foo1.a;
 	WRITE_ONCE(foo2.b, READ_ONCE(foo1.b));
 	foo2.c = foo1.c;
@@ -1622,11 +2100,16 @@ say READ_ONCE(jiffies).  The reason for this is that READ_ONCE() and
 WRITE_ONCE() are implemented as volatile casts, which has no effect when
 its argument is already marked volatile.
 
+READ_ONCE()、WRITE_ONCE() 就是通过 volatile 转化实现的，所以对于标识成
+volatile 的参数无效.
+
 Please note that these compiler barriers have no direct effect on the CPU,
 which may then reorder things however it wishes.
 
+编译器屏障对于CPU 来说没有任何影响.
 
-CPU MEMORY BARRIERS
+
+CPU MEMORY BARRIERS(CPU内存屏障)
 -------------------
 
 The Linux kernel has eight basic CPU memory barriers:
@@ -1638,9 +2121,32 @@ The Linux kernel has eight basic CPU memory barriers:
 	READ		rmb()			smp_rmb()
 	DATA DEPENDENCY	read_barrier_depends()	smp_read_barrier_depends()
 
+CPU之间并不是需要内存屏障的唯一情况.
+SMP CONDITIONAL  仅仅在内核编译为单核情况下，仅仅是一个编译器屏障.
+
+使用 MANDATORY (mb/wmb/rmb):
+
+1. 设备驱动(MMIO)
+2. DMA 操作
+3. 固件/BIOS交互
+4. 虚拟化环境
+
+使用 SMP CONDITIONAL (smp_mb/smp_wmb/smp_rmb):
+
+1. 只是 CPU 间同步
+2. 内核线程间通信
+3. 共享内存数据结构
+4. 性能敏感且 UP 安全
+
 
 All memory barriers except the data dependency barriers imply a compiler
 barrier. Data dependencies do not impose any additional compiler ordering.
+
+除了数据依赖屏障之外，其他的内存屏障都包含了编译器屏障.
+数据依赖屏障不提供编译器屏障保证.
+
+1. 数据依赖关系本身就会组织编译器重排列(遵循严格的因果关系)
+2. 是特定CPU(Alpha)的硬件问题，与软件无关
 
 Aside: In the case of data dependencies, the compiler would be expected
 to issue the loads in the correct order (eg. `a[b]` would have to load
@@ -1652,9 +2158,67 @@ having loaded a[b], thus having a newer copy of b than a[b]. A consensus
 has not yet been reached about these problems, however the READ_ONCE()
 macro is a good place to start looking.
 
+C 标准中没有对编译器优化做名确规定，所以可能会导致编译器优化破坏数据依赖的情况.
+
+1. 编译器预测
+
+```c
+//原始代码
+int val = a[b];
+
+//预测代码
+int val = a[1];
+if (b != 1)
+    val = a[b];
+```
+数据依赖屏障的作用是，防止CPU 预测val 的值，使用的时候要求数据之间存在严格的依赖关系.
+编译器优化之后的代码:
+```c
+int val = a[1];
+```
+不存在依赖关系，数据依赖屏障不生效，如果b 不变，有别的CPU 更新了a 的值，此时就会读取到
+一个旧值.
+
+完善之后代码应该是这样的:
+
+```c
+int idx = READ_ONCE(b);
+<data dependency barrier>
+int val = a[idx];
+```
+
+2. 编译器重读
+
+```c
+//原始代码
+int val = a[b];
+
+//优化代码
+int val = a[b];
+b = new_b;
+```
+
+如果new_b 别的CPU 更新过了，此时的数据对应不上.
+
+完善之后代码应该是这样的:
+
+```c
+int local_b = READ_ONCE(b);
+<data dependency barrier>
+int val = a[local_b];
+```
+
 SMP memory barriers are reduced to compiler barriers on uniprocessor compiled
 systems because it is assumed that a CPU will appear to be self-consistent,
 and will order overlapping accesses correctly with respect to itself.
+
+内存屏障用于解决多核之间的缓存一致性问题，单核的时候不存在这个问题.
+为什么需要保留编译器屏障？
+
+1. 线程之间
+2. 进程、软中断、中断上下文之间
+
+的共享数据可能会存在交互的情况，为了防止这些情况下的数据一致性.
 
 [!] Note that SMP memory barriers _must_ be used to control the ordering of
 references to shared memory on SMP systems, though the use of locking instead
@@ -1676,13 +2240,21 @@ There are some more advanced barrier functions:
      barrier after it, depending on the function.  It isn't guaranteed to
      insert anything more than a compiler barrier in a UP compilation.
 
-
  (*) smp_mb__before_atomic();
  (*) smp_mb__after_atomic();
 
      These are for use with atomic (such as add, subtract, increment and
      decrement) functions that don't return a value, especially when used for
      reference counting.  These functions do not imply memory barriers.
+
+     原子操作本身"强制"了即时的缓存一致性.
+
+     原子操作本身并没有实现内存屏障，也就是不能保证:
+
+     1. 编译器优化
+     2. CPU 乱序
+
+     需要额外提供内存屏障来保证.
 
      These are also used for atomic bitop functions that do not return a
      value (such as set_bit and clear_bit).
@@ -1696,6 +2268,8 @@ There are some more advanced barrier functions:
 
      This makes sure that the death mark on the object is perceived to be set
      *before* the reference counter is decremented.
+
+     此处保证death 标识位在引用计数减少之前被感知到.
 
      See Documentation/atomic_ops.txt for more information.  See the "Atomic
      operations" subsection for information on where to use these.
@@ -1711,6 +2285,7 @@ There are some more advanced barrier functions:
      In addition, lockless_dereference() is used in some data structures
      that can be used both with and without RCU.
 
+     非rcu() 时候使用.
 
  (*) dma_wmb();
  (*) dma_rmb();
@@ -1751,6 +2326,10 @@ There are some more advanced barrier functions:
      can see it now has ownership.  The wmb() is needed to guarantee that the
      cache coherent memory writes have completed before attempting a write to
      the cache incoherent MMIO region.
+
+     wmb() 需要保证缓存一致性内存（普通 RAM）的写入完成，然后才能写缓存非一致性的 MMIO 区域.
+
+     设备不参与 CPU 缓存一致性协议，它只能看到内存中的数据，所以必须用 wmb() 确保数据真的写到内存了.
 
      See Documentation/DMA-API.txt for more information on consistent memory.
 
@@ -1806,6 +2385,8 @@ for each construct.  These operations all imply certain barriers:
      subsequent loads and stores. Note that this is weaker than smp_mb()!
      The smp_mb__before_spinlock() primitive is free on many architectures.
 
+     smp_mb__before_spinlock() 确保之前的store 执行完成.
+
  (2) RELEASE operation implication:
 
      Memory operations issued before the RELEASE will be completed before the
@@ -1818,6 +2399,7 @@ for each construct.  These operations all imply certain barriers:
 
      All ACQUIRE operations issued before another ACQUIRE operation will be
      completed before that ACQUIRE operation.
+     ACQUIRE操作 会在另一个ACQUIRE操作 之前完成.
 
  (4) ACQUIRE vs RELEASE implication:
 
@@ -1830,6 +2412,8 @@ for each construct.  These operations all imply certain barriers:
      being unable to get the lock immediately, or due to receiving an unblocked
      signal whilst asleep waiting for the lock to become available.  Failed
      locks do not imply any sort of barrier.
+
+     失败的锁不提供任何的内存屏障保证.
 
 [!] Note: one of the consequences of lock ACQUIREs and RELEASEs being only
 one-way barriers is that the effects of instructions outside of a critical
@@ -1866,6 +2450,7 @@ so that:
 	*B = b;
 
 could occur as:
+针对不同锁的RELEASE ACQUIRE(注意顺序)可能会乱序:
 
 	ACQUIRE N, STORE *B, STORE *A, RELEASE M
 
@@ -1896,10 +2481,14 @@ the RELEASE would simply complete, thereby avoiding the deadlock.
 	a sleep-unlock race, but the locking primitive needs to resolve
 	such races properly in any case.
 
+	单CPU 有多个执行单元.
+
 Locks and semaphores may not provide any guarantee of ordering on UP compiled
 systems, and so cannot be counted on in such a situation to actually achieve
 anything at all - especially with respect to I/O accesses - unless combined
 with interrupt disabling operations.
+
+锁和信号在单核系统上可能会被优化掉.
 
 See also the section on "Inter-CPU locking barrier effects".
 
@@ -1938,6 +2527,7 @@ Functions that disable interrupts (ACQUIRE equivalent) and enable interrupts
 barriers are required in such a situation, they must be provided from some
 other means.
 
+关中断、使能中断函数，仅仅作为编译器屏障.
 
 SLEEP AND WAKE-UP FUNCTIONS
 ---------------------------
@@ -2061,6 +2651,8 @@ and the waker does:
 	event_indicated = 1;
 	wake_up(&event_wait_queue);
 
+这里无法保证 event_indicated 和 my_data 的先后关系.
+
 there's no guarantee that the change to event_indicated will be perceived by
 the sleeper as coming after the change to my_data.  In such a circumstance, the
 code on both sides must interpolate its own memory barriers between the
@@ -2135,6 +2727,30 @@ two spinlocked sections on two different CPUs may be seen as interleaved by the
 PCI bridge, because the PCI bridge does not necessarily participate in the
 cache-coherence protocol, and is therefore incapable of issuing the required
 read memory barriers.
+
+PCI Bridge 不参与缓存一致性协议.
+PCI Bridge 可能以任意顺序看到来自不同 CPU 的写入！
+即使有自旋锁也不够！
+
+mmiowb() 做了什么：
+
+1. 刷新 Write Combining Buffer (WCB)
+   - CPU 本地的 MMIO 写缓冲
+2. 等待 Posted Write Buffer 清空
+   - PCI 总线的写缓冲
+3. 确保顺序性
+   - 之前的 MMIO 写入必须到达 PCI Bridge
+   - 才能继续执行
+
+也就是说，自旋锁仅仅保证了PCU 的执行顺序，但不保证 MMIO 到达设备的顺序，特别是在 NUMA 系统上.
+
+为什么要特别指明NUMA 系统？ NUMA 系统中：
+1. 每个 CPU Socket 通常有自己的 PCIe Root Complex（Bridge）
+2. 形成独立的 PCIe 域（Domain）
+3. 设备"属于"特定的 NUMA 节点
+4. 跨节点访问需要通过互连（QPI/UPI/Infinity Fabric）
+5. 这种架构导致了不同的访问延迟
+6. 因此需要 mmiowb() 来保证顺序
 
 For example:
 
@@ -2213,7 +2829,7 @@ circumstances in which reordering definitely _could_ be a problem:
  (*) Interrupts.
 
 
-INTERPROCESSOR INTERACTION
+INTERPROCESSOR INTERACTION - TODO 没看懂
 --------------------------
 
 When there's a system with more than one processor, more than one CPU in the
@@ -2403,6 +3019,11 @@ situations because on some CPUs the atomic instructions used imply full memory
 barriers, and so barrier instructions are superfluous in conjunction with them,
 and in such cases the special barrier primitives will be no-ops.
 
+为什么提供了特殊的内存屏障 smp_mb__before_atomic()、smp_mb__after_atomic()？
+
+不同架构的原子操作实现不同，有的默认就实现了内存屏障，所以不需要提供额外的内存屏障.
+这种情况下，smp_mb__after_atomic()、smp_mb__before_atomic() 会被编译为空.
+
 See Documentation/atomic_ops.txt for more information.
 
 
@@ -2432,6 +3053,9 @@ might be needed:
  (2) If the accessor functions are used to refer to an I/O memory window with
      relaxed memory access properties, then _mandatory_ memory barriers are
      required to enforce ordering.
+     I/O memory window with relaxed memory access properties 指的是映射到内存
+     地址空间的I/O区域，且这个区域被配置为允许乱序访问.
+     不同的I/O memory window可以有不同的内存访问属性，这是在映射时就确定的.
 
 See Documentation/DocBook/deviceiobook.tmpl for more information.
 
@@ -2479,6 +3103,20 @@ sections will include synchronous load operations on strictly ordered I/O
 registers that form implicit I/O barriers. If this isn't sufficient then an
 mmiowb() may need to be used explicitly.
 
+LOAD 操作会同步等待，直到结束.
+
+严格有序I/O寄存器：
+- 用于设备控制（命令、配置、状态）
+- 访问顺序错误会导致设备故障
+- 硬件强制保证顺序
+- 性能代价高
+
+宽松顺序I/O区域：
+- 用于数据传输（缓冲区、帧缓存）
+- 顺序不影响正确性
+- 允许优化提高性能
+- 需要显式屏障来同步
+
 
 A similar situation may occur between an interrupt routine and two routines
 running on separate CPUs that communicate with each other. If such a case is
@@ -2520,7 +3158,7 @@ functions:
      respect to each other on the issuing CPU depends on the characteristics
      defined for the memory window through which they're accessing. On later
      i386 architecture machines, for example, this is controlled by way of the
-     MTRR registers.
+     MTRR(Memory Type Range Registers) registers.
 
      Ordinarily, these will be guaranteed to be fully ordered and uncombined,
      provided they're not accessing a prefetchable device.
@@ -2817,6 +3455,15 @@ A memory barrier isn't sufficient in such a case, but rather the cache must be
 flushed between the cached memory write and the MMIO access if the two are in
 any way dependent.
 
+内存映射 I/O（MMIO） 通常通过 CPU 内存空间中的一个窗口进行访问，
+该窗口具有与普通 RAM 不同的属性。
+
+这些属性通常包括 此类访问完全绕过缓存，直接访问设备总线。
+这意味着 MMIO 访问可能实际上会 超越之前发出的对缓存内存的访问。
+在这种情况下，单纯的内存屏障不足以保证顺序；
+如果缓存内存写操作与 MMIO 访问存在依赖关系，必须在两者之间 刷新缓存。
+
+单纯内存屏障无法确保，内存访问、MMIO 之间的关系.
 
 =========================
 THE THINGS CPUS GET UP TO
