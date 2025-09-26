@@ -163,3 +163,7 @@ lib/gen_crc32table
 usr/gen_init_cpio
 usr/initramfs_data.cpio
 usr/initramfs_list
+
+# AI prompt
+CLAUDE.md
+
