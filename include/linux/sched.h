@@ -389,10 +389,24 @@ struct signal_struct {
  * priority to a value higher than any user task. Note:
  * MAX_RT_PRIO must not be smaller than MAX_USER_RT_PRIO.
  */
-
+/*
+ * 举例说明，假设为:
+ *
+ * MAX_RT_PRIO		120
+ * MAX_USER_RT_PRIO	100
+ *
+ * 用户态可设置的数值可以通过函数获得，为[1, 99].
+ * 设置到内核之后对应的优先级为[20, 118].
+ * 1  --> (120 - 1 - 1)	 = 118
+ * 99 --> (120 - 1 - 99) = 20
+ *
+ * 通过这种方式设置之后，内核态会占有更高优先级.
+ */
 #define MAX_USER_RT_PRIO	100
+//100
 #define MAX_RT_PRIO		MAX_USER_RT_PRIO
 
+//140
 #define MAX_PRIO		(MAX_RT_PRIO + 40)
 
 #define rt_task(p)		(unlikely((p)->prio < MAX_RT_PRIO))
@@ -581,6 +595,10 @@ struct task_struct {
 
 	int lock_depth;		/* BKL lock depth */
 
+	/*
+	 * static_prio:	静态优先级，与nice 值一一对应，范围是 [100, 139].
+	 * prio:	动态优先级，动态调整
+	 */
 	int prio, static_prio;
 	struct list_head run_list;
 	prio_array_t *array;
@@ -606,6 +624,11 @@ struct task_struct {
 	struct list_head ptrace_children;
 	struct list_head ptrace_list;
 
+	/*
+	 * @mm: 进程的内存描述符，内核线程的该指针为空
+	 * @activate_mm: 当前活跃的内存描述符.
+	 *               用户态进程等于mm，内核线程等于之前的mm.
+	 */
 	struct mm_struct *mm, *active_mm;
 
 /* task state */
@@ -640,8 +663,13 @@ struct task_struct {
 	int __user *set_child_tid;		/* CLONE_CHILD_SETTID */
 	int __user *clear_child_tid;		/* CLONE_CHILD_CLEARTID */
 
+	/* 实时优先级，用户态设置的优先级 */
 	unsigned long rt_priority;
 	cputime_t utime, stime;
+	/*
+	 * @nvcsw(voluntary context switches): 自愿上下文切换
+	 * @nivcsw(involuntary context switches): 非自愿上下文切换
+	 */
 	unsigned long nvcsw, nivcsw; /* context switch counts */
 	struct timespec start_time;
 /* mm fault and swap info: this can arguably be seen as either mm-specific or thread-specific */

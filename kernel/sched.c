@@ -56,6 +56,7 @@
  * to static priority [ MAX_RT_PRIO..MAX_PRIO-1 ],
  * and back.
  */
+/* nice值、静态优先级转换宏 */
 #define NICE_TO_PRIO(nice)	(MAX_RT_PRIO + (nice) + 20)
 #define PRIO_TO_NICE(prio)	((prio) - MAX_RT_PRIO - 20)
 #define TASK_NICE(p)		PRIO_TO_NICE((p)->static_prio)
@@ -65,8 +66,10 @@
  * can work with better when scaling various scheduler parameters,
  * it's a [ 0 ... 39 ] range.
  */
+/* 用户态优先级是将nice 值转换成[0 ... 39] 的范围 */
 #define USER_PRIO(p)		((p)-MAX_RT_PRIO)
 #define TASK_USER_PRIO(p)	USER_PRIO((p)->static_prio)
+/* 39 */
 #define MAX_USER_PRIO		(USER_PRIO(MAX_PRIO))
 
 /*
@@ -82,6 +85,7 @@
  * default timeslice is 100 msecs, maximum timeslice is 800 msecs.
  * Timeslices get refilled after they expire.
  */
+/* 时间片，单位为 jiffy */
 #define MIN_TIMESLICE		max(5 * HZ / 1000, 1)
 #define DEF_TIMESLICE		(100 * HZ / 1000)
 #define ON_RUNQUEUE_WEIGHT	 30
@@ -89,8 +93,10 @@
 #define PARENT_PENALTY		100
 #define EXIT_WEIGHT		  3
 #define PRIO_BONUS_RATIO	 25
+/* 9 */
 #define MAX_BONUS		(MAX_USER_PRIO * PRIO_BONUS_RATIO / 100)
 #define INTERACTIVE_DELTA	  2
+/* 900ms 单位为jiffies  */
 #define MAX_SLEEP_AVG		(DEF_TIMESLICE * MAX_BONUS)
 #define STARVATION_LIMIT	(MAX_SLEEP_AVG)
 #define NS_MAX_SLEEP_AVG	(JIFFIES_TO_NS(MAX_SLEEP_AVG))
@@ -100,6 +106,8 @@
  * array after it has expired its current timeslice. (it will not
  * continue to run immediately, it will still roundrobin with
  * other interactive tasks.)
+ *
+ * 交互进程会被重新插入到active 队列中.
  *
  * This part scales the interactivity limit depending on niceness.
  *
@@ -122,7 +130,18 @@
  * it takes some effort for them to get interactive, but it's not
  * too hard.
  */
+/*
+ * 上边的这个图这么看，进程nice 值为 -20 为例:
+ *
+ * TASK_INTERACTIVE(-20): [1,1,1,1,1,1,1,1,1,0,0]
+ *
+ * 优先级会动态调整，prio范围为 [static_prio-5, static_prio+4]，
+ * nice值为-20 时，DELTA(p)为-2，
+ * 最终也就是 prio 和 (static_prio + 2) 比较.
+ * 在可选范围内，仅仅有(static_prio + 3)、(static_prio + 4) 不满足条件.
+ */
 
+/* 于sleep_avg 相关，范围是 [0,9] */
 #define CURRENT_BONUS(p) \
 	(NS_TO_JIFFIES((p)->sleep_avg) * MAX_BONUS / \
 		MAX_SLEEP_AVG)
@@ -141,9 +160,21 @@
 #define SCALE(v1,v1_max,v2_max) \
 	(v1) * (v2_max) / (v1_max)
 
+/*
+ * nice值与DELTA() 对应关系:
+ *
+ * [-20,-1] -2  -2  -2  -1  -1  -1  -1  0  0  0  0  0  1  1  1  1  2  2  2  2
+ * [0,  19]  2   2   2   2   2   3   3  3  3  4  4  4  4  4  5  5  5  5  6  6
+ */
 #define DELTA(p) \
 	(SCALE(TASK_NICE(p), 40, MAX_BONUS) + INTERACTIVE_DELTA)
 
+/*
+ * 非实时进程prio 会根据进程休眠时间动态调整，范围为[static_prio-5, static_prio+4].
+ * DELTA(p)是nice 数值与优先级的关系，nice数值越小，DELTA(p) 越小，该条件越容易满足.
+ *
+ * 也就是说该条件是与休眠时间、nice值的二维函数，休眠时间越长、nice值越低，则越容易满足条件.
+ */
 #define TASK_INTERACTIVE(p) \
 	((p)->prio <= (p)->static_prio - DELTA(p))
 
@@ -197,6 +228,27 @@ struct prio_array {
  * (such as the load balancing or the thread migration code), lock
  * acquire operations must be ordered by ascending &runqueue.
  */
+/*
+ * 运行队列结构体，per-cpu 变量.
+ * 同时给多个runqueue结构体加锁时应该按照升序执行.
+ *
+ * @nr_running: 队列中可运行的进程数量
+ * @cpu_load: CPU 负载，SMP 下负载均衡时有效
+ * @nr_switches: 进程切换次数
+ * @nr_uninterruptible: 队列中不可中断休眠的数量.
+ *                      全部运行队列的和有效，因为进程可能在CPU0 休眠，在CPU1 被唤醒.
+ *                      单独看单个CPU 的值没有意义.
+ * @expired_timestamp:  active、expired 切换的时候，会设置该值为0.
+ *                      第一个进程时间片耗尽时，会记录当前时间.
+ *                      本意是active、expired 数组两个互相切换，交互进程会重新加入到
+ *                      active 数组中，为了防止expired数组中进程被starve，所以需要
+ *                      记录一下时间，如果时间太长，就不向active数组中加进程了.
+ *                      这里记录第一个进程片耗尽时间片的时间，有点不太符合题意，
+ *                      导致的结果是更早不向expired 中放进程.
+ * @timestamp_last_tick:每次中断过来记录当前时间戳，单位是纳秒.
+ * @curr: 记录当前队列运行的进程
+ * @idle: 指向idle进程
+ */
 struct runqueue {
 	spinlock_t lock;
 
@@ -223,6 +275,9 @@ struct runqueue {
 	task_t *curr, *idle;
 	struct mm_struct *prev_mm;
 	prio_array_t *active, *expired, arrays[2];
+	/*
+	 * @best_expired_prio: 记录expired 队列中最高优先级进程的静态优先级
+	 */
 	int best_expired_prio;
 	atomic_t nr_iowait;
 
@@ -591,11 +646,17 @@ static int effective_prio(task_t *p)
 {
 	int bonus, prio;
 
+	/* 实时进程的优先级是固定的 */
 	if (rt_task(p))
 		return p->prio;
 
+	/* 红利，休眠时间太长则红利越大，范围为 [-4, 5] */
 	bonus = CURRENT_BONUS(p) - MAX_BONUS / 2;
 
+	/*
+	 * 红利会增加进程优先级，prio越小，优先级越高.
+	 * 进程优先级会在[static_prio-5, static+4] 之间动态调整.
+	 */
 	prio = p->static_prio - bonus;
 	if (prio < MAX_RT_PRIO)
 		prio = MAX_RT_PRIO;
@@ -735,6 +796,7 @@ static void activate_task(task_t *p, runqueue_t *rq, int local)
 
 /*
  * deactivate_task - remove a task from the runqueue.
+ *                 - 从运行队列中删除进程
  */
 static void deactivate_task(struct task_struct *p, runqueue_t *rq)
 {
@@ -1362,6 +1424,7 @@ task_t * context_switch(runqueue_t *rq, task_t *prev, task_t *next)
 	struct mm_struct *mm = next->mm;
 	struct mm_struct *oldmm = prev->active_mm;
 
+	/* 如果下一个是内存线程 */
 	if (unlikely(!mm)) {
 		next->active_mm = oldmm;
 		atomic_inc(&oldmm->mm_count);
@@ -1914,6 +1977,7 @@ static runqueue_t *find_busiest_queue(struct sched_group *group)
  *
  * Called with this_rq unlocked.
  */
+/* 负载均衡函数 */
 static int load_balance(int this_cpu, runqueue_t *this_rq,
 			struct sched_domain *sd, enum idle_type idle)
 {
@@ -2266,6 +2330,13 @@ unsigned long long current_sched_time(const task_t *tsk)
  * increasing number of running tasks. We also ignore the interactivity
  * if a better static_prio task has expired:
  */
+/*
+ * interactive 进程会被重新放到active 数组中，为了防止active 数组导致
+ * exipred 数组中进程饿死，设置该检测机制.
+ *
+ * 1. 如果放到expired 数组中的进程已经长时间没被调度了，则返回真
+ * 2. 如果expired 数组中有静态优先级高于当前进程的，则放到expired 数组
+ */
 #define EXPIRED_STARVING(rq) \
 	((STARVATION_LIMIT && ((rq)->expired_timestamp && \
 		(jiffies - (rq)->expired_timestamp >= \
@@ -2432,6 +2503,7 @@ void scheduler_tick(void)
 		 * This only applies to tasks in the interactive
 		 * delta range with at least TIMESLICE_GRANULARITY to requeue.
 		 */
+		/* 将实时进程时间片分成更小粒度 */
 		if (TASK_INTERACTIVE(p) && !((task_timeslice(p) -
 			p->time_slice) % TIMESLICE_GRANULARITY(p)) &&
 			(p->time_slice >= TIMESLICE_GRANULARITY(p)) &&
@@ -2669,15 +2741,21 @@ need_resched_nonpreemptible:
 	if (unlikely(prev->flags & PF_DEAD))
 		prev->state = EXIT_DEAD;
 
+	/*
+	 * 如果进程状态不是TASK_RUNNING 表示进程自己设置成了其他状态，也就是
+	 * 主动放弃CPU 的.
+	 */
 	switch_count = &prev->nivcsw;
 	if (prev->state && !(preempt_count() & PREEMPT_ACTIVE)) {
 		switch_count = &prev->nvcsw;
+		/* 如果可中断且已经有信号，则设置成RUNNING 状态 */
 		if (unlikely((prev->state & TASK_INTERRUPTIBLE) &&
 				unlikely(signal_pending(prev))))
 			prev->state = TASK_RUNNING;
 		else {
 			if (prev->state == TASK_UNINTERRUPTIBLE)
 				rq->nr_uninterruptible++;
+			/* 将进程从运行队列中删除 */
 			deactivate_task(prev, rq);
 		}
 	}
@@ -3355,6 +3433,11 @@ static void __setscheduler(struct task_struct *p, int policy, int prio)
 	BUG_ON(p->array);
 	p->policy = policy;
 	p->rt_priority = prio;
+	/*
+	 * BUG，应该是:
+	 * p->prio = MAX_RT_PRIO-1 - p->rt_priority;
+	 * 2.6.13 中修复了.
+	 */
 	if (policy != SCHED_NORMAL)
 		p->prio = MAX_USER_RT_PRIO-1 - p->rt_priority;
 	else
