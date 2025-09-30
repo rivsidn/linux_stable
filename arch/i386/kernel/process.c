@@ -151,6 +151,10 @@ void cpu_idle (void)
 		while (!need_resched()) {
 			void (*idle)(void);
 
+			/*
+			 * cpu_idle_state 用于检查CPU 是否经过了一次idle 状态.
+			 * 在cpu_idle_wait()中将该值全部设置为 1，cpu_idle() 中置 0.
+			 */
 			if (__get_cpu_var(cpu_idle_state))
 				__get_cpu_var(cpu_idle_state) = 0;
 

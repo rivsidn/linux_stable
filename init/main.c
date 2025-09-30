@@ -6,7 +6,7 @@
  *  GK 2/5/95  -  Changed to support mounting root fs via NFS
  *  Added initrd & change_root: Werner Almesberger & Hans Lermen, Feb '96
  *  Moan early if gcc is old, avoiding bogus kernels - Paul Gortmaker, May '96
- *  Simplified starting of init:  Michael A. Griffith <grif@acm.org> 
+ *  Simplified starting of init:  Michael A. Griffith <grif@acm.org>
  */
 
 #define __KERNEL_SYSCALLS__
@@ -384,7 +384,7 @@ static void noinline rest_init(void)
 	unlock_kernel();
 	preempt_enable_no_resched();
 	cpu_idle();
-} 
+}
 
 /* Check for early params. */
 static int __init do_early_param(char *param, char *val)
@@ -598,7 +598,7 @@ static void __init do_basic_setup(void)
 	sysctl_init();
 #endif
 
-	/* Networking initialization needs a process context */ 
+	/* Networking initialization needs a process context */
 	sock_init();
 
 	do_initcalls();
@@ -699,11 +699,11 @@ static int init(void * unused)
 
 	(void) sys_dup(0);
 	(void) sys_dup(0);
-	
+
 	/*
 	 * We try each of these until one succeeds.
 	 *
-	 * The Bourne shell can be used instead of init if we are 
+	 * The Bourne shell can be used instead of init if we are
 	 * trying to recover a really broken machine.
 	 */
 

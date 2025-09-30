@@ -941,12 +941,12 @@ static task_t *copy_process(unsigned long clone_flags,
 	p->io_wait = NULL;
 	p->audit_context = NULL;
 #ifdef CONFIG_NUMA
- 	p->mempolicy = mpol_copy(p->mempolicy);
- 	if (IS_ERR(p->mempolicy)) {
- 		retval = PTR_ERR(p->mempolicy);
- 		p->mempolicy = NULL;
- 		goto bad_fork_cleanup;
- 	}
+	p->mempolicy = mpol_copy(p->mempolicy);
+	if (IS_ERR(p->mempolicy)) {
+		retval = PTR_ERR(p->mempolicy);
+		p->mempolicy = NULL;
+		goto bad_fork_cleanup;
+	}
 #endif
 
 	p->tgid = p->pid;

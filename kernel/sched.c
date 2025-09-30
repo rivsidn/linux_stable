@@ -247,7 +247,10 @@ struct prio_array {
  *                      导致的结果是更早不向expired 中放进程.
  * @timestamp_last_tick:每次中断过来记录当前时间戳，单位是纳秒.
  * @curr: 记录当前队列运行的进程
- * @idle: 指向idle进程
+ * @idle: 指向当前核的idle进程
+ * @prev_mm:  进程切换过程中存储上一个进程的mm_struct 结构体
+ * @best_expired_prio: 记录expired 队列中最高优先级进程的静态优先级
+ * @nr_iowait: IO 等待进程的数量
  */
 struct runqueue {
 	spinlock_t lock;
@@ -275,9 +278,6 @@ struct runqueue {
 	task_t *curr, *idle;
 	struct mm_struct *prev_mm;
 	prio_array_t *active, *expired, arrays[2];
-	/*
-	 * @best_expired_prio: 记录expired 队列中最高优先级进程的静态优先级
-	 */
 	int best_expired_prio;
 	atomic_t nr_iowait;
 
@@ -751,6 +751,7 @@ static void recalc_task_prio(task_t *p, unsigned long long now)
  * Update all the scheduling statistics stuff. (sleep average
  * calculation, priority modifiers, etc.)
  */
+/* 移动进程到运行队列中 */
 static void activate_task(task_t *p, runqueue_t *rq, int local)
 {
 	unsigned long long now;
@@ -765,6 +766,7 @@ static void activate_task(task_t *p, runqueue_t *rq, int local)
 	}
 #endif
 
+	/* 重新计算进程优先级 */
 	recalc_task_prio(p, now);
 
 	/*
@@ -1262,6 +1264,7 @@ void fastcall wake_up_new_task(task_t * p, unsigned long clone_flags)
 
 	rq = task_rq_lock(p, &flags);
 	cpu = task_cpu(p);
+	/* 当前CPU */
 	this_cpu = smp_processor_id();
 
 	BUG_ON(p->state != TASK_RUNNING);
@@ -1311,6 +1314,7 @@ void fastcall wake_up_new_task(task_t * p, unsigned long clone_flags)
 		 * Not the local CPU - must adjust timestamp. This should
 		 * get optimised away in the !CONFIG_SMP case.
 		 */
+		/* 切换到其他队列上去，需要调整时间戳 */
 		p->timestamp = (p->timestamp - this_rq->timestamp_last_tick)
 					+ rq->timestamp_last_tick;
 		__activate_task(p, rq);
@@ -2695,6 +2699,7 @@ asmlinkage void __sched schedule(void)
 	 * schedule() atomically, we ignore that path for now.
 	 * Otherwise, whine if we are scheduling when we should not be.
 	 */
+	/* 调度不能发生在原子上下文，但是进程退出可以 */
 	if (likely(!current->exit_state)) {
 		if (unlikely(in_atomic())) {
 			printk(KERN_ERR "scheduling while atomic: "
@@ -2803,6 +2808,7 @@ go_idle:
 		rq->best_expired_prio = MAX_PRIO;
 	}
 
+	/* 寻找下一个进程 */
 	idx = sched_find_first_bit(array->bitmap);
 	queue = array->queue + idx;
 	next = list_entry(queue->next, task_t, run_list);
@@ -2817,6 +2823,7 @@ go_idle:
 
 		array = next->array;
 		dequeue_task(next, array);
+		/* 重新计算进程优先级 */
 		recalc_task_prio(next, next->timestamp + delta);
 		enqueue_task(next, array);
 	}

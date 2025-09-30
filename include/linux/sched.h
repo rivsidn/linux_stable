@@ -586,6 +586,15 @@ int set_current_groups(struct group_info *group_info);
 struct audit_context;		/* See audit.c */
 struct mempolicy;
 
+/* 
+ * task_struct - 进程对应的结构体
+ *
+ * @timestamp: 记录时间戳
+ *             - 进程fork时间
+ *             - 进程放到运行队列时间
+ * @activated: 记录唤醒的上下文，如果在中断中唤醒则置 2;
+ *             非中断中唤醒置 1.
+ */
 struct task_struct {
 	volatile long state;	/* -1 unrunnable, 0 runnable, >0 stopped */
 	struct thread_info *thread_info;
