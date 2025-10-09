@@ -2429,6 +2429,7 @@ void account_steal_time(struct task_struct *p, cputime_t steal)
  * It also gets called by the fork code, when changing the parent's
  * timeslices.
  */
+/* 定时器中断中调用该函数 */
 void scheduler_tick(void)
 {
 	int cpu = smp_processor_id();

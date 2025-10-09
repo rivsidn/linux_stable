@@ -589,11 +589,14 @@ struct mempolicy;
 /* 
  * task_struct - 进程对应的结构体
  *
+ * @static_prio: 静态优先级，与nice 值一一对应，范围是 [100, 139].
+ * @prio: 动态优先级，动态调整
  * @timestamp: 记录时间戳
  *             - 进程fork时间
  *             - 进程放到运行队列时间
  * @activated: 记录唤醒的上下文，如果在中断中唤醒则置 2;
  *             非中断中唤醒置 1.
+ * @time_slice: 
  */
 struct task_struct {
 	volatile long state;	/* -1 unrunnable, 0 runnable, >0 stopped */
@@ -604,10 +607,6 @@ struct task_struct {
 
 	int lock_depth;		/* BKL lock depth */
 
-	/*
-	 * static_prio:	静态优先级，与nice 值一一对应，范围是 [100, 139].
-	 * prio:	动态优先级，动态调整
-	 */
 	int prio, static_prio;
 	struct list_head run_list;
 	prio_array_t *array;
