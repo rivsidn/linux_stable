@@ -1,10 +1,21 @@
 #!/bin/bash
 
-export KDEV_KERNEL=arch/x86_64/boot/bzImage
-export KDEV_DOCKER_IMAGE=ubuntu-16.04-amd64
-export KDEV_QEMU_IMAGE=/opt/ubuntu-rootfs/ubuntu-16.04-amd64-rootfs.img
+KDEV_KERNEL=arch/x86_64/boot/bzImage
+KDEV_DOCKER_IMAGE=ubuntu-16.04-amd64
+KDEV_QEMU_IMAGE=/opt/ubuntu-rootfs/ubuntu-16.04-amd64-rootfs.img
 
-alias kdev_build='docker run -it --rm -v $PWD:/workspace -w /workspace --hostname kernel-dev $KDEV_DOCKER_IMAGE bash'
+usage() {
+	echo "Usage: source $(basename "${BASH_SOURCE[0]}") && <function>"
+	echo ""
+	echo "Functions:"
+	echo "  kdev_build                    Start docker build environment"
+	echo "  kdev_push <src> [dst]         Copy files to QEMU rootfs image"
+	echo "  kdev_run <mode>               Run QEMU (terminal|debug|internet|bridge)"
+}
+
+kdev_build() {
+	docker run -it --rm -v $PWD:/workspace -w /workspace --hostname kernel-dev $KDEV_DOCKER_IMAGE bash
+}
 
 # 传输文件到 rootfs.img
 kdev_push() {
@@ -129,3 +140,7 @@ kdev_run() {
 	esac
 }
 
+# 直接执行时显示 usage，source 时不执行
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+	usage
+fi
