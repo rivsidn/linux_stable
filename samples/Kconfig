@@ -99,4 +99,16 @@ config SAMPLE_DELAYED_WORK_RACE
 
 	  If in doubt, say "N" here.
 
+config SAMPLE_NETLINK
+	tristate "Build netlink examples -- loadable modules only"
+	depends on NET && m
+	help
+	  This builds netlink example modules that demonstrate:
+	  - Generic netlink family registration
+	  - Kernel to userspace communication
+	  - Userspace to kernel communication
+	  - Netlink message handling
+
+	  If in doubt, say "N" here.
+
 endif # SAMPLES
