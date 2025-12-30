@@ -13,6 +13,7 @@ obj-$(CONFIG_SAMPLE_KOBJECT)		+= kobject/
 obj-$(CONFIG_SAMPLE_KPROBES)		+= kprobes/
 obj-$(CONFIG_SAMPLE_LIVEPATCH)		+= livepatch/
 obj-$(CONFIG_SAMPLE_LOCKING)		+= locking/
+obj-$(CONFIG_SAMPLE_BASIC_MODULE)	+= modules/
 subdir-$(CONFIG_SAMPLE_PIDFD)		+= pidfd
 obj-$(CONFIG_SAMPLE_QMI_CLIENT)		+= qmi/
 obj-$(CONFIG_SAMPLE_RPMSG_CLIENT)	+= rpmsg/
