@@ -216,4 +216,13 @@ config SAMPLE_WATCH_QUEUE
 	  Build example userspace program to use the new mount_notify(),
 	  sb_notify() syscalls and the KEYCTL_WATCH_KEY keyctl() function.
 
+menuconfig SAMPLE_LOCKING
+	bool "Locking samples"
+	help
+	  You can build and test sample kernel locking code here.
+
+if SAMPLE_LOCKING
+source "samples/locking/Kconfig"
+endif
+
 endif # SAMPLES
