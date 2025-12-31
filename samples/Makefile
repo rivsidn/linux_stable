@@ -1,5 +1,8 @@
 # Makefile for Linux samples code
 
 obj-$(CONFIG_SAMPLES)	+= kobject/ kprobes/ trace_events/ livepatch/ \
-			   hw_breakpoint/ kfifo/ kdb/ hidraw/ rpmsg/ seccomp/ \
-			   configfs/ workqueue/ delayed_work_race/ netlink/
+			   hw_breakpoint/ kfifo/ kdb/ hidraw/ rpmsg/ seccomp/ configfs/ \
+			   modules/		\
+			   workqueue/		\
+			   delayed_work_race/	\
+			   netlink/
