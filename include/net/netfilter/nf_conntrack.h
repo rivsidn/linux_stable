@@ -118,6 +118,10 @@ struct nf_conn {
 	union nf_conntrack_proto proto;
 };
 
+/*
+ * nf_conntrack_tuple_hash{} 结构体内嵌在nf_conn{} 结构体中，
+ * 这里通过 nf_conntrack_tuple_hash{} 结构体找到nf_conn{} 结构体.
+ */
 static inline struct nf_conn *
 nf_ct_tuplehash_to_ctrack(const struct nf_conntrack_tuple_hash *hash)
 {

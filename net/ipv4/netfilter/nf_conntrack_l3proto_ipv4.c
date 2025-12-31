@@ -41,6 +41,7 @@ static bool ipv4_pkt_to_tuple(const struct sk_buff *skb, unsigned int nhoff,
 	if (ap == NULL)
 		return false;
 
+	//设置地址
 	tuple->src.u3.ip = ap[0];
 	tuple->dst.u3.ip = ap[1];
 

@@ -136,6 +136,7 @@ static inline bool __nf_ct_tuple_dst_equal(const struct nf_conntrack_tuple *t1,
 		t1->dst.protonum == t2->dst.protonum);
 }
 
+/* 比较五元组是否相同 */
 static inline bool nf_ct_tuple_equal(const struct nf_conntrack_tuple *t1,
 				     const struct nf_conntrack_tuple *t2)
 {

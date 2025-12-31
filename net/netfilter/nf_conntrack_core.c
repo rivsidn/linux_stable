@@ -126,6 +126,7 @@ EXPORT_PER_CPU_SYMBOL(nf_conntrack_untracked);
 unsigned int nf_conntrack_hash_rnd __read_mostly;
 EXPORT_SYMBOL_GPL(nf_conntrack_hash_rnd);
 
+/* 使用tuple 中除了dir 外的所有元素做hash */
 static u32 hash_conntrack_raw(const struct nf_conntrack_tuple *tuple)
 {
 	unsigned int n;
@@ -175,11 +176,14 @@ nf_ct_get_tuple(const struct sk_buff *skb,
 {
 	memset(tuple, 0, sizeof(*tuple));
 
+	/* 设置三层协议(ipv4、ipv6) */
 	tuple->src.l3num = l3num;
 	if (l3proto->pkt_to_tuple(skb, nhoff, tuple) == 0)
 		return false;
 
+	/* 设置四层协议(tcp、udp、icmp) */
 	tuple->dst.protonum = protonum;
+	/* 设置方向 */
 	tuple->dst.dir = IP_CT_DIR_ORIGINAL;
 
 	return l4proto->pkt_to_tuple(skb, dataoff, net, tuple);
@@ -215,6 +219,7 @@ bool nf_ct_get_tuplepr(const struct sk_buff *skb, unsigned int nhoff,
 }
 EXPORT_SYMBOL_GPL(nf_ct_get_tuplepr);
 
+/* 反转五元组 */
 bool
 nf_ct_invert_tuple(struct nf_conntrack_tuple *inverse,
 		   const struct nf_conntrack_tuple *orig,
@@ -434,6 +439,7 @@ nf_ct_key_equal(struct nf_conntrack_tuple_hash *h,
 	/* A conntrack can be recreated with the equal tuple,
 	 * so we need to check that the conntrack is confirmed
 	 */
+	/* 需要检查会话是否confirmed */
 	return nf_ct_tuple_equal(tuple, &h->tuple) &&
 	       nf_ct_zone_equal(ct, zone, NF_CT_DIRECTION(h)) &&
 	       nf_ct_is_confirmed(ct);
@@ -522,6 +528,7 @@ static void __nf_conntrack_hash_insert(struct nf_conn *ct,
 {
 	struct net *net = nf_ct_net(ct);
 
+	/* 添加到双向表中 */
 	hlist_nulls_add_head_rcu(&ct->tuplehash[IP_CT_DIR_ORIGINAL].hnnode,
 			   &net->ct.hash[hash]);
 	hlist_nulls_add_head_rcu(&ct->tuplehash[IP_CT_DIR_REPLY].hnnode,
@@ -603,6 +610,7 @@ __nf_conntrack_confirm(struct sk_buff *skb)
 	   ICMP/TCP RST packets in other direction.  Actual packet
 	   which created connection will be IP_CT_NEW or for an
 	   expected connection, IP_CT_RELATED. */
+	/* 仅接收初始方向 */
 	if (CTINFO2DIR(ctinfo) != IP_CT_DIR_ORIGINAL)
 		return NF_ACCEPT;
 
@@ -612,6 +620,7 @@ __nf_conntrack_confirm(struct sk_buff *skb)
 	do {
 		sequence = read_seqcount_begin(&net->ct.generation);
 		/* reuse the hash saved before */
+		/* __nf_conntrack_alloc() 函数中保存了hash */
 		hash = *(unsigned long *)&ct->tuplehash[IP_CT_DIR_REPLY].hnnode.pprev;
 		hash = hash_bucket(hash, net);
 		reply_hash = hash_conntrack(net,
@@ -659,6 +668,7 @@ __nf_conntrack_confirm(struct sk_buff *skb)
 	/* Timer relative to confirmation time, not original
 	   setting time, otherwise we'd get timer wrap in
 	   weird delay cases. */
+	/* 启动定时器 */
 	ct->timeout.expires += jiffies;
 	add_timer(&ct->timeout);
 	atomic_inc(&ct->ct_general.use);
@@ -1009,6 +1019,7 @@ init_conntrack(struct net *net, struct nf_conn *tmpl,
 
 	/* Now it is inserted into the unconfirmed list, bump refcount */
 	nf_conntrack_get(&ct->ct_general);
+	/* 添加到未确认列表 */
 	nf_ct_add_to_unconfirmed_list(ct);
 
 	local_bh_enable();
@@ -1060,6 +1071,7 @@ resolve_normal_ct(struct net *net, struct nf_conn *tmpl,
 		if (IS_ERR(h))
 			return (void *)h;
 	}
+	/* 获取到对应的会话 */
 	ct = nf_ct_tuplehash_to_ctrack(h);
 
 	/* It exists; we have (non-exclusive) reference. */
@@ -1082,7 +1094,9 @@ resolve_normal_ct(struct net *net, struct nf_conn *tmpl,
 		}
 		*set_reply = 0;
 	}
+	/* 绑定会话 */
 	skb->nfct = &ct->ct_general;
+	/* 设置状态 */
 	skb->nfctinfo = *ctinfo;
 	return ct;
 }
@@ -1177,6 +1191,7 @@ nf_conntrack_in(struct net *net, u_int8_t pf, unsigned int hooknum,
 		goto out;
 	}
 
+	/* 设置 IPS_SEEN_REPLY_BIT 状态 */
 	if (set_reply && !test_and_set_bit(IPS_SEEN_REPLY_BIT, &ct->status))
 		nf_conntrack_event_cache(IPCT_REPLY, ct);
 out:
