@@ -121,6 +121,13 @@ config SAMPLE_NETLINK
 
 	  If in doubt, say "N" here.
 
+config SAMPLE_WAITQUEUE
+	tristate "Build waitqueue examples -- loadable modules only"
+	depends on m
+	help
+	  This builds waitqueue example modules
+
+
 # The above configs added by yuchao
 
 endif # SAMPLES

@@ -5,4 +5,5 @@ obj-$(CONFIG_SAMPLES)	+= kobject/ kprobes/ trace_events/ livepatch/ \
 			   modules/		\
 			   workqueue/		\
 			   delayed_work_race/	\
-			   netlink/
+			   netlink/		\
+			   waitqueue/
