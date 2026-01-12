@@ -16,6 +16,7 @@ import gdb
 from linux import utils
 
 
+# 获取task_struct{} 数据结构
 task_type = utils.CachedType("struct task_struct")
 
 
