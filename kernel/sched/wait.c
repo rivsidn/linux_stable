@@ -70,6 +70,10 @@ static void __wake_up_common(wait_queue_head_t *q, unsigned int mode,
 	list_for_each_entry_safe(curr, next, &q->task_list, task_list) {
 		unsigned flags = curr->flags;
 
+		/*
+		 * 1. 唤醒所有非互斥类型
+		 * 2. 互斥类型唤醒对应个数(至少一个)
+		 */
 		if (curr->func(curr, mode, wake_flags, key) &&
 				(flags & WQ_FLAG_EXCLUSIVE) && !--nr_exclusive)
 			break;

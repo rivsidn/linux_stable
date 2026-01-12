@@ -1936,6 +1936,7 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	 */
 	smp_mb__before_spinlock();
 	raw_spin_lock_irqsave(&p->pi_lock, flags);
+	/* 如果进程状态和唤醒状态不匹配则不唤醒，直接跳出 */
 	if (!(p->state & state))
 		goto out;
 
@@ -3371,6 +3372,12 @@ asmlinkage __visible void __sched preempt_schedule_irq(void)
 int default_wake_function(wait_queue_t *curr, unsigned mode, int wake_flags,
 			  void *key)
 {
+	/*
+	 * 参数分别为:
+	 * 进程task_struct{} 结构体.
+	 * 进程状态.
+	 * 唤醒flag.
+	 */
 	return try_to_wake_up(curr->private, mode, wake_flags);
 }
 EXPORT_SYMBOL(default_wake_function);
