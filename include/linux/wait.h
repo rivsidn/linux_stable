@@ -212,6 +212,7 @@ wait_queue_head_t *bit_waitqueue(void *, int);
  * otherwise.
  */
 
+/* 等待进程核心的执行代码 */
 #define ___wait_event(wq, condition, state, exclusive, ret, cmd)	\
 ({									\
 	__label__ __out;						\
@@ -300,6 +301,9 @@ do {									\
  *
  * wake_up() has to be called after changing any variable that could
  * change the result of the wait condition.
+ */
+/*
+ * 系统suspend 时，进程进入 freeze 状态.
  */
 #define wait_event_freezable(wq, condition)				\
 ({									\
@@ -391,6 +395,9 @@ do {									\
  *
  * wake_up() has to be called after changing any variable that could
  * change the result of the wait condition.
+ */
+/*
+ * 执行命令.
  */
 #define wait_event_cmd(wq, condition, cmd1, cmd2)			\
 do {									\
@@ -988,6 +995,8 @@ static inline int
 wait_on_bit(unsigned long *word, int bit, unsigned mode)
 {
 	might_sleep();
+
+	/* 检查当前bit 值 */
 	if (!test_bit(bit, word))
 		return 0;
 	return out_of_line_wait_on_bit(word, bit,
@@ -1092,10 +1101,18 @@ wait_on_bit_action(unsigned long *word, int bit, wait_bit_action_f *action,
  * set.  Returns non-zero if a signal was delivered to the process and
  * the @mode allows that signal to wake the process.
  */
+/*
+ * 与wait_on_bit() 区别在多个waiter 同时等待时，wait_on_bit_lock()
+ * 一次性只能唤醒一个进程; wait_on_bit()可以唤醒多个进程.
+ *
+ * 同样也是通过wake_up_bit() 函数唤醒.
+ */
 static inline int
 wait_on_bit_lock(unsigned long *word, int bit, unsigned mode)
 {
 	might_sleep();
+
+	/* 设置bit 并返回之前的值 */
 	if (!test_and_set_bit(bit, word))
 		return 0;
 	return out_of_line_wait_on_bit_lock(word, bit, bit_wait, mode);

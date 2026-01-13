@@ -59,6 +59,11 @@ static inline bool try_to_freeze_unsafe(void)
 	return __refrigerator(false);
 }
 
+/*
+ * 如果系统进程发生了suspend，则在此进入freeze状态.
+ *
+ * freeze 状态下，普通的唤醒无法唤醒进程，只能通过thaw 函数唤醒.
+ */
 static inline bool try_to_freeze(void)
 {
 	if (!(current->flags & PF_NOFREEZE))

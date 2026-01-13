@@ -283,6 +283,10 @@ void abort_exclusive_wait(wait_queue_head_t *q, wait_queue_t *wait,
 	unsigned long flags;
 
 	__set_current_state(TASK_RUNNING);
+	/*
+	 * 原本需要唤醒wait.
+	 * 如果wait进程不在等待队列中了，则需要将信号传递给下一个wait.
+	 */
 	spin_lock_irqsave(&q->lock, flags);
 	if (!list_empty(&wait->task_list))
 		list_del_init(&wait->task_list);
@@ -394,10 +398,14 @@ __wait_on_bit(wait_queue_head_t *wq, struct wait_bit_queue *q,
 	int ret = 0;
 
 	do {
+		/* 添加到等待队列 */
 		prepare_to_wait(wq, &q->wait, mode);
+		/* 如果设置了bit 则休眠 */
 		if (test_bit(q->key.bit_nr, q->key.flags))
 			ret = (*action)(&q->key, mode);
 	} while (test_bit(q->key.bit_nr, q->key.flags) && !ret);
+
+	/* 从等待队列中删除 */
 	finish_wait(wq, &q->wait);
 	return ret;
 }
@@ -438,9 +446,12 @@ __wait_on_bit_lock(wait_queue_head_t *wq, struct wait_bit_queue *q,
 		ret = action(&q->key, mode);
 		if (!ret)
 			continue;
+		/* 被信号唤醒时执行该函数 */
 		abort_exclusive_wait(wq, &q->wait, mode, &q->key);
 		return ret;
 	} while (test_and_set_bit(q->key.bit_nr, q->key.flags));
+
+	/* 正常唤醒时，执行该函数 */
 	finish_wait(wq, &q->wait);
 	return 0;
 }
