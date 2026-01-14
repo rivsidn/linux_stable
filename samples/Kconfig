@@ -127,6 +127,11 @@ config SAMPLE_WAITQUEUE
 	help
 	  This builds waitqueue example modules
 
+config SAMPLE_PROC
+	tristate "Build proc fs examples -- loadable modules only"
+	depends on m
+	help
+	  This builds proc fs example modules
 
 # The above configs added by yuchao
 
