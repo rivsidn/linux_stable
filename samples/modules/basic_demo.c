@@ -21,6 +21,6 @@ module_init(basic_demo_init);
 module_exit(basic_demo_exit);
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Your Name");
+MODULE_AUTHOR("rivsidn");
 MODULE_DESCRIPTION("A simple kernel module example");
 MODULE_VERSION("1.0");
