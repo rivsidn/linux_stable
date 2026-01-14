@@ -116,3 +116,7 @@ all.config
 # local prompt
 PROMPT.md
 
+# sample user
+samples/netlink/rtnetlink/rtnetlink_user
+samples/netlink/generic_netlink/generic_netlink_user
+
