@@ -371,12 +371,14 @@ int woken_wake_function(wait_queue_t *wait, unsigned mode, int sync, void *key)
 }
 EXPORT_SYMBOL(woken_wake_function);
 
+/* wait_on_bit() 对应的唤醒函数 */
 int wake_bit_function(wait_queue_t *wait, unsigned mode, int sync, void *arg)
 {
 	struct wait_bit_key *key = arg;
 	struct wait_bit_queue *wait_bit
 		= container_of(wait, struct wait_bit_queue, wait);
 
+	/* 仅仅在匹配时才唤醒 */
 	if (wait_bit->key.flags != key->flags ||
 			wait_bit->key.bit_nr != key->bit_nr ||
 			test_bit(key->bit_nr, key->flags))

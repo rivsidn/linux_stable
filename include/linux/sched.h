@@ -215,6 +215,7 @@ extern void proc_sched_set_task(struct task_struct *p);
 #define EXIT_TRACE		(EXIT_ZOMBIE | EXIT_DEAD)
 /* in tsk->state again */
 #define TASK_DEAD		64
+/* 可以通过SIGKILL 唤醒 */
 #define TASK_WAKEKILL		128
 #define TASK_WAKING		256
 #define TASK_PARKED		512
