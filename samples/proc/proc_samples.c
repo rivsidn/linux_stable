@@ -26,6 +26,7 @@
 #include <linux/init.h>
 
 #include <linux/proc_fs.h>
+#include <linux/seq_file.h>
 
 static struct proc_dir_entry *samples_dir;
 static struct proc_dir_entry *dir_0;
@@ -38,29 +39,45 @@ static struct proc_dir_entry *dir_1_node_1;
 static struct proc_dir_entry *dir_1_node_2;
 static struct proc_dir_entry *dir_2;
 
+static int node_open(struct inode *inode, struct file *file);
+
 static const struct file_operations node_ops = {
 	.owner		= THIS_MODULE,
-	.open		= NULL,
-	.read		= NULL,
+	.open		= node_open,
+	.read		= seq_read,
 	.llseek		= NULL,
 	.release	= NULL,
 };
+
+static int node_show(struct seq_file *seq, void *v)
+{
+	long type = (long)seq->private;
+
+	seq_printf(seq, "type %ld\n", type);
+
+	return 0;
+}
+
+static int node_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, node_show, PDE_DATA(inode));
+}
 
 static int proc_build_dir_0(void)
 {
 	int ret = -ENOMEM;
 
-	dir_0_node_0 = proc_create("node_0", 0, dir_0, &node_ops);
+	dir_0_node_0 = proc_create_data("node_0", 0, dir_0, &node_ops, (void *)0);
 	if (!dir_0_node_0) {
 		pr_err("dir_0 failed to create node_0\n");
 		goto err_node_0;
 	}
-	dir_0_node_1 = proc_create("node_1", 0, dir_0, &node_ops);
+	dir_0_node_1 = proc_create_data("node_1", 0, dir_0, &node_ops, (void *)1);
 	if (!dir_0_node_1) {
 		pr_err("dir_0 failed to create node_1\n");
 		goto err_node_1;
 	}
-	dir_0_node_2 = proc_create("node_2", 0, dir_0, &node_ops);
+	dir_0_node_2 = proc_create_data("node_2", 0, dir_0, &node_ops, (void *)2);
 	if (!dir_0_node_2) {
 		pr_err("dir_0 failed to create node_2\n");
 		goto err_node_2;
