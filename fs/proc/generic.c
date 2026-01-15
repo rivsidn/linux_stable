@@ -544,6 +544,7 @@ void pde_put(struct proc_dir_entry *pde)
 /*
  * Remove a /proc entry and free it if it's not currently in use.
  */
+/* 只能删除空目录 */
 void remove_proc_entry(const char *name, struct proc_dir_entry *parent)
 {
 	struct proc_dir_entry *de = NULL;
@@ -578,6 +579,7 @@ void remove_proc_entry(const char *name, struct proc_dir_entry *parent)
 }
 EXPORT_SYMBOL(remove_proc_entry);
 
+/* 递归删除所有子目录，然后删除当前目录 */
 int remove_proc_subtree(const char *name, struct proc_dir_entry *parent)
 {
 	struct proc_dir_entry *root = NULL, *de, *next;
