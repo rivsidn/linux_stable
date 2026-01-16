@@ -83,6 +83,10 @@ __copy_to_user_inatomic(void __user *to, const void *from, unsigned long n)
  * Returns number of bytes that could not be copied.
  * On success, this will be zero.
  */
+/*
+ * 成功时返回 0;
+ * 失败时返回不能拷贝的字节数.
+ */
 static __always_inline unsigned long __must_check
 __copy_to_user(void __user *to, const void *from, unsigned long n)
 {

@@ -34,6 +34,7 @@ extern struct proc_dir_entry *proc_create_data(const char *, umode_t,
 					       const struct file_operations *,
 					       void *);
 
+/* 是对proc_create_data()做了一层封装 */
 static inline struct proc_dir_entry *proc_create(
 	const char *name, umode_t mode, struct proc_dir_entry *parent,
 	const struct file_operations *proc_fops)

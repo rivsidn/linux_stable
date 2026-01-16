@@ -1638,6 +1638,11 @@ struct block_device_operations;
 
 struct iov_iter;
 
+/*
+ * @read: 返回非0 表示读到的字节数; 返回0 表示读到文件末尾.
+ * @write:返回写入的字节数，如果返回的字节数少于用户传入的字节数，
+ *        用户会重新调用直到完全写入.
+ */
 struct file_operations {
 	struct module *owner;
 	loff_t (*llseek) (struct file *, loff_t, int);

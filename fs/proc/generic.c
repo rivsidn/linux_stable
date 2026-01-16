@@ -485,6 +485,7 @@ struct proc_dir_entry *proc_create_data(const char *name, umode_t mode,
 					void *data)
 {
 	struct proc_dir_entry *pde;
+	/* 常规文件 */
 	if ((mode & S_IFMT) == 0)
 		mode |= S_IFREG;
 
@@ -495,6 +496,7 @@ struct proc_dir_entry *proc_create_data(const char *name, umode_t mode,
 
 	BUG_ON(proc_fops == NULL);
 
+	/* 设置默认权限，只读权限 */
 	if ((mode & S_IALLUGO) == 0)
 		mode |= S_IRUGO;
 	pde = __proc_create(&parent, name, mode, 1);
