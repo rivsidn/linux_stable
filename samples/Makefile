@@ -2,4 +2,5 @@
 
 obj-$(CONFIG_SAMPLES)	+= kobject/ kprobes/ tracepoints/ trace_events/ \
 			   hw_breakpoint/ \
-			   hello_world/
+			   hello_world/ \
+			   lockdep/

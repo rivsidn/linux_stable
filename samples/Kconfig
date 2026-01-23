@@ -54,6 +54,13 @@ config SAMPLE_BASIC_MODULE
 
 	  If in doubt, say "N" here.
 
+config SAMPLE_LOCKDEP
+	tristate "Build simple lockdep example -- loadable modules only"
+	depends on m
+	help
+	  This is a basic example for trace lockdep.
+
+	  If in doubt, say "N" here.
 
 # The above configs added by yuchao
 
