@@ -11,6 +11,7 @@
 #include <linux/kallsyms.h>
 #include <linux/stacktrace.h>
 
+/* 输出调用栈 */
 void print_stack_trace(struct stack_trace *trace, int spaces)
 {
 	int i;
