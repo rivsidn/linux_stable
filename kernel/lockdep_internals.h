@@ -9,6 +9,14 @@
 /*
  * Lock-class usage-state bits:
  */
+/*
+ * 锁状态标识位.
+ *
+ * LOCK_USED_IN_HARDIRQ:      硬中断中获取锁.
+ * LOCK_USED_IN_HARDIRQ_READ: 硬中断中获取读锁.
+ * LOCK_ENABLED_HARDIRQ:      用户态、软中断获取锁时没关闭硬中断.
+ * LOCK_ENABLED_HARDIRQ_READ: 用户态、软中断获取读锁时没关闭硬中断.
+ */
 enum lock_usage_bit {
 #define LOCKDEP_STATE(__STATE)		\
 	LOCK_USED_IN_##__STATE,		\

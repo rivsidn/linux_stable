@@ -35,6 +35,7 @@ int debug_locks_silent;
 /*
  * Generic 'turn off all lock debugging' function:
  */
+/* 关闭所有锁debugging功能 */
 int debug_locks_off(void)
 {
 	if (__debug_locks_off()) {

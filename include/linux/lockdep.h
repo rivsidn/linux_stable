@@ -51,6 +51,11 @@ extern struct lock_class_key __lockdep_no_validate__;
 /*
  * The lock-class itself:
  */
+/*
+ * @dep_gen_id:	BFS 访问标记.
+ *		BFS 初始化时，递增lockdep_dependency_gen_id.
+ *		节点访问时，dep_gen_id 存储lockdep_dependency_gen_id，表示已访问.
+ */
 struct lock_class {
 	/*
 	 * class-hash:
@@ -150,6 +155,20 @@ struct lockdep_map {
  * Every lock has a list of other locks that were taken after it.
  * We only grow the list, never remove from it:
  */
+/*
+ * lock_list 两个lock_list 共同描述两个lock_class 之间的一条有向边.
+ *
+ * A -> B (B在A 之后获取) 这个关系需要两个lock_list 来表述.
+ *
+ * lock_list-1{}->class = lock_class-A，添加在 lock_class-B before 链表
+ * lock_list-2{}->class = lock_class-B，添加在 lock_class-A after  链表
+ *
+ * @entry:	链表节点
+ * @class:	锁类
+ * @trace:	调用栈信息
+ * @distance:	距离，直接依赖还是间接依赖
+ * @parent:	BFS(广度优先搜索)中记录搜索路径，用于回溯找到完整的死锁路径
+ */
 struct lock_list {
 	struct list_head		entry;
 	struct lock_class		*class;
@@ -165,6 +184,17 @@ struct lock_list {
 
 /*
  * We record lock dependency chains, so that we can cache them:
+ */
+/*
+ * lock chain(锁调用链)，表示锁调用的先后顺序.
+ *
+ * 用于缓存锁的调用链，是全局唯一的(不同的进程可能拥有相同的lock chain).
+ *
+ * @irq_context: 中断上下文类型
+ * @depth: 锁深度(chain 中锁的数量)
+ * @base: chain_hlocks[]数组中的起始idx
+ * @entry: hash链表节点
+ * @chain_key: 依赖链的hash值
  */
 struct lock_chain {
 	u8				irq_context;
@@ -182,6 +212,18 @@ struct lock_chain {
  */
 #define MAX_LOCKDEP_KEYS		((1UL << MAX_LOCKDEP_KEYS_BITS) - 1)
 
+/*
+ * 进程获取的锁结构体，对应进程获取的一个锁.
+ * 在task_struct{} 结构体中以栈(先进后出)的形式存在.
+ *
+ * @prev_chain_key: 记录key 值.
+ *                  此处的key 值是由之前的key 值和当前的lock_class 所在的数组id 
+ *                  共同hash得到的.
+ *                  也就是说，key 体现的是task_struct 获取锁的顺序关系.
+ * @instance: 当前锁实例
+ * @nest_lock:嵌套锁指针，指向"父锁".
+ *            存在嵌套时，需要明确指明在"父锁"的保护下.
+ */
 struct held_lock {
 	/*
 	 * One-way hash of the dependency chain up to this point. We
@@ -222,6 +264,9 @@ struct held_lock {
 	unsigned int irq_context:2; /* bit 0 - soft, bit 1 - hard */
 	unsigned int trylock:1;						/* 16 bits */
 
+	/*
+	 * @read: 0 写锁; 1 读; 2 递归读(相同class id 两个锁同时读)
+	 */
 	unsigned int read:2;        /* see lock_acquire() comment */
 	unsigned int check:2;       /* see lock_acquire() comment */
 	unsigned int hardirqs_off:1;
@@ -263,12 +308,16 @@ extern void lockdep_init_map(struct lockdep_map *lock, const char *name,
  * of dependencies wrong: they are either too broad (they need a class-split)
  * or they are too narrow (they suffer from a false class-split):
  */
+/* 设置类 */
 #define lockdep_set_class(lock, key) \
 		lockdep_init_map(&(lock)->dep_map, #key, key, 0)
+/* 设置类和类名 */
 #define lockdep_set_class_and_name(lock, key, name) \
 		lockdep_init_map(&(lock)->dep_map, name, key, 0)
+/* 设置类和子类 */
 #define lockdep_set_class_and_subclass(lock, key, sub) \
 		lockdep_init_map(&(lock)->dep_map, #key, key, sub)
+/* 设置子类 */
 #define lockdep_set_subclass(lock, sub)	\
 		lockdep_init_map(&(lock)->dep_map, #lock, \
 				 (lock)->dep_map.key, sub)
@@ -388,6 +437,7 @@ struct lock_class_key { };
 extern void lock_contended(struct lockdep_map *lock, unsigned long ip);
 extern void lock_acquired(struct lockdep_map *lock, unsigned long ip);
 
+/* 锁竞争 */
 #define LOCK_CONTENDED(_lock, try, lock)			\
 do {								\
 	if (!try(_lock)) {					\

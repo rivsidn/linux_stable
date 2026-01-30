@@ -17,6 +17,11 @@
 
 #include <linux/lockdep.h>
 
+/*
+ * @magic:	设置锁的magic
+ * @owner_cpu:	获取锁的CPU
+ * @owner:	获取锁的进程
+ */
 typedef struct raw_spinlock {
 	arch_spinlock_t raw_lock;
 #ifdef CONFIG_GENERIC_LOCKBREAK

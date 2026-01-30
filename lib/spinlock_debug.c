@@ -75,6 +75,7 @@ static void spin_bug(raw_spinlock_t *lock, const char *msg)
 static inline void
 debug_spin_lock_before(raw_spinlock_t *lock)
 {
+	/* 获取锁时检查，是否满足条件 */
 	SPIN_BUG_ON(lock->magic != SPINLOCK_MAGIC, lock, "bad magic");
 	SPIN_BUG_ON(lock->owner == current, lock, "recursion");
 	SPIN_BUG_ON(lock->owner_cpu == raw_smp_processor_id(),
@@ -125,6 +126,7 @@ static void __spin_lock_debug(raw_spinlock_t *lock)
 	}
 }
 
+/* 获取自旋锁 */
 void do_raw_spin_lock(raw_spinlock_t *lock)
 {
 	debug_spin_lock_before(lock);
