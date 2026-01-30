@@ -2359,6 +2359,50 @@ mark_lock_irq(struct task_struct *curr, struct held_lock *this,
 	 * mark ENABLED has to look backwards -- to ensure no dependee
 	 * has USED_IN state, which, again, would allow  recursion deadlocks.
 	 */
+	/*
+	 * USED_IN 需要向前查找，确保没有ENABLED 状态.
+	 * ENABLED 需要向后查找，确保没有USED_IN 状态.
+	 *
+	 * 假设当前存在这样一条锁链表:
+	 * A -> B -> C -> D
+	 *
+	 * 假设C 锁是当前为LOCK_USED_IN_HARDIRQ 状态，则D 不能处于
+	 * LOCK_ENABLED_HARDIRQ(_READ)状态.
+	 *
+	 * ## 场景一
+	 *
+	 * Task:
+	 *	local_irq_disable(); spin_lock(&C); local_irq_enable();
+	 *	spin_lock(&D);		//可以响应中断
+	 *	spin_unlock(&D);
+	 *	local_irq_disable(); spin_unlock(&C); local_irq_enable();
+	 * IRQ:
+	 *	spin_lock(&C);
+	 *	spin_unlock(&C);
+	 *
+	 * 这种场景下，C 为 USED_IN_HARDIRQ，D 为 ENABLED_HARDIRQ.
+	 * 这就导致了一个问题，Task 获取D 的时候，可以被IRQ 打断，如果此时中断
+	 * 中获取C 锁就会导致死锁问题.
+	 *
+	 * ## 场景二
+	 *
+	 * Task1:
+	 *	local_irq_disable()
+	 *	spin_lock(&C);
+	 *	spin_lock(&D);
+	 *	spin_unlock(&D);
+	 *	spin_unlock(&C);
+	 *	local_irq_enable()
+	 * Task2:
+	 *	spin_lock(&D);
+	 *	spin_unlock(&D);
+	 * IRQ:
+	 *	spin_lock(&C);
+	 *	spin_unlock(&C);
+	 *
+	 * 这种情况下，虽然D 处于ENABLED_HARDIRQ 状态但是并不会导致死锁，虽然此时
+	 * lockdep 也会报警告，但并不是实际存在问题.
+	 */
 	check_usage_f usage = dir ?
 		check_usage_backwards : check_usage_forwards;
 
