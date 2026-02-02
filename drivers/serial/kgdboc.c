@@ -79,6 +79,7 @@ static int kgdboc_option_setup(char *opt)
 	return 0;
 }
 
+/* kgdb over console(通过串口进行内核调试) */
 __setup("kgdboc=", kgdboc_option_setup);
 
 static void cleanup_kgdboc(void)

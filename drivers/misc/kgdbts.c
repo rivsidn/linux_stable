@@ -1003,6 +1003,7 @@ static int kgdbts_option_setup(char *opt)
 	return 0;
 }
 
+/* kgdb Test Suite 测试套件配置 */
 __setup("kgdbts=", kgdbts_option_setup);
 
 static int configure_kgdbts(void)

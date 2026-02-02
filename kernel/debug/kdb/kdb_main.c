@@ -2502,7 +2502,7 @@ static int kdb_per_cpu(int argc, const char **argv)
 	if (argc < 1 || argc > 3)
 		return KDB_ARGCOUNT;
 
-	snprintf(buf, sizeof(buf), "per_cpu__%s", argv[1]);
+	snprintf(buf, sizeof(buf), "%s", argv[1]);
 	if (!kdbgetsymval(buf, &symtab)) {
 		kdb_printf("%s is not a per_cpu variable\n", argv[1]);
 		return KDB_BADADDR;
@@ -2763,6 +2763,7 @@ static void __init kdb_inittab(void)
 	kdb_register_repeat("btt", kdb_bt, "<vaddr>",
 	  "Backtrace process given its struct task address", 0,
 			    KDB_REPEAT_NONE);
+	/* 链表遍历 */
 	kdb_register_repeat("ll", kdb_ll, "<first-element> <linkoffset> <cmd>",
 	  "Execute cmd for each element in linked list", 0, KDB_REPEAT_NONE);
 	kdb_register_repeat("env", kdb_env, "",

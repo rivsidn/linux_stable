@@ -1052,6 +1052,7 @@ static int __init kgdbdbgp_parse_config(char *str)
 
 	return 0;
 }
+/* 通过USB 调试端口的配置函数 */
 early_param("kgdbdbgp", kgdbdbgp_parse_config);
 
 static int kgdbdbgp_reader_thread(void *ptr)

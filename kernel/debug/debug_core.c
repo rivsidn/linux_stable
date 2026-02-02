@@ -764,6 +764,7 @@ static struct sysrq_key_op sysrq_dbg_op = {
 };
 #endif
 
+/* PANIC 之后可以通过kdb 捕获 */
 static int kgdb_panic_event(struct notifier_block *self,
 			    unsigned long val,
 			    void *data)
