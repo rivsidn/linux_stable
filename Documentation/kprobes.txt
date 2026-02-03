@@ -32,6 +32,11 @@ the entry to a kernel function, and provides convenient access to the
 function's arguments.  A return probe fires when a specified function
 returns.
 
+kprobe: 插入任意位置.
+jprobe: 插入函数开始位置，可以访问函数的参数.
+kretprobe:  可以访问函数返回值.
+
+
 In the typical case, Kprobes-based instrumentation is packaged as
 a kernel module.  The module's init function installs ("registers")
 one or more probes, and the exit function unregisters them.  A
@@ -70,9 +75,14 @@ but then Kprobes would have to temporarily remove the breakpoint
 instruction.  This would open a small time window when another CPU
 could sail right past the probepoint.)
 
+意思是说，拷贝出来的指令是单独执行的，并不是在原来位置替换之后再重新
+执行，因为那样会导致其他CPU 漏过该探测点.
+
 After the instruction is single-stepped, Kprobes executes the
 "post_handler," if any, that is associated with the kprobe.
 Execution then continues with the instruction following the probepoint.
+
+执行"post_handler" 回调函数.
 
 1.2 How Does a Jprobe Work?
 
@@ -133,6 +143,8 @@ or preemption), NR_CPUS should be enough.  If maxactive <= 0, it is
 set to a default value.  If CONFIG_PREEMPT is enabled, the default
 is max(10, 2*NR_CPUS).  Otherwise, the default is NR_CPUS.
 
+设置探测可能同时被触发的数量.
+
 It's not a disaster if you set maxactive too low; you'll just miss
 some probes.  In the kretprobe struct, the nmissed field is set to
 zero when the return probe is registered, and is incremented every
@@ -149,6 +161,8 @@ If the entry_handler returns 0 (success) then a corresponding return handler
 is guaranteed to be called upon function return. If the entry_handler
 returns a non-zero error then Kprobes leaves the return address as is, and
 the kretprobe has no further effect for that particular function instance.
+
+entry_handler 可用于检测是否需要执行kretprobe.
 
 Multiple entry and return handler invocations are matched using the unique
 kretprobe_instance object associated with them. Additionally, a user
@@ -314,7 +328,7 @@ Here are terse, mini-man-page specifications for these functions and
 the associated probe handlers that you'll write. See the files in the
 samples/kprobes/ sub-directory for examples.
 
-4.1 register_kprobe
+4.1 register_kprobe(注册kprobe)
 
 #include <linux/kprobes.h>
 int register_kprobe(struct kprobe *kp);
@@ -395,6 +409,8 @@ control to Kprobes.)  If the probed function is declared asmlinkage
 or anything else that affects how args are passed, the handler's
 declaration must match.
 
+回调函数必须要与跟踪的函数相同.
+
 register_jprobe() returns 0 on success, or a negative errno otherwise.
 
 4.3 register_kretprobe
@@ -419,7 +435,10 @@ regs is as described for kprobe.pre_handler.  ri points to the
 kretprobe_instance object, of which the following fields may be
 of interest:
 - ret_addr: the return address
+            实际的返回地址，一个函数可能会被不同的函数调用，
+            拥有不同的返回地址，所以这里记录时需要区分.
 - rp: points to the corresponding kretprobe object
+      指向对应的kretprobe 结构体
 - task: points to the corresponding task struct
 - data: points to per return-instance private data; see "Kretprobe
 	entry-handler" for details.
@@ -427,6 +446,8 @@ of interest:
 The regs_return_value(regs) macro provides a simple abstraction to
 extract the return value from the appropriate register as defined by
 the architecture's ABI.
+
+获取函数的返回值.
 
 The handler's return value is currently ignored.
 
