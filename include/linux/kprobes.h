@@ -70,6 +70,24 @@ typedef int (*kprobe_fault_handler_t) (struct kprobe *, struct pt_regs *,
 typedef int (*kretprobe_handler_t) (struct kretprobe_instance *,
 				    struct pt_regs *);
 
+/*
+ * @hlist:		hlist 节点
+ * @list:		多个kprobe 同时探测一个地址时候，使用list串连起来
+ * @nmissed:		记录kprobe 被临时关闭的次数
+ * @addr:		探测点地址(与symbol_name 互斥)
+ * @symbol_name:	符号名称(与addr 互斥)
+ * @offset:		可以与addr 配合使用
+ * @pre_handler:	探测地址前执行
+ * @post_handler:	探测地址后执行
+ * @fault_handler:	异常处理函数.
+ *                      发生异常的时候，调用该函数，如果返回1 表示被正常处理了.
+ * @break_handler:	handler 函数中触发了断点trap.
+ *                      handler 函数执行过程中中断是关闭的，CPU 依旧可以响应异常.
+ * @opcode:		kprobe  注册的时候，会将1 字节指令替换成int 3.
+ *                      这里用于存储这个被替换成int 3 的字节原始内容，用于卸载时恢复.
+ * @ainsn:		opcode处的完整指令，用于指令执行.
+ * @flags:		标识位
+ */
 struct kprobe {
 	struct hlist_node hlist;
 
@@ -155,6 +173,12 @@ static inline int kprobe_optimized(struct kprobe *p)
  * etc upfront, regardless of sub-scopes within a function, this mirroring
  * principle currently works only for probes placed on function entry points.
  */
+/*
+ * jprobe 机制依赖特定的 pre_handler(setjmp_pre_handler)，所以用户设置
+ * 的pre_handler不会生效，只有post_handler 可以设置并正常执行.
+ *
+ * @entry: 执行函数入口，需要与被跟踪的函数有相同的函数签名
+ */
 struct jprobe {
 	struct kprobe kp;
 	void *entry;	/* probe handling code to jump to */
@@ -171,7 +195,11 @@ struct jprobe {
  * can be active concurrently.
  * nmissed - tracks the number of times the probed function's return was
  * ignored, due to maxactive being too low.
- *
+ */
+/*
+ * @handler:		函数返回是调用
+ * @entry_handler:	函数入口处调用
+ * @data_size:		注册时指定，存储在kretprobe_instance{}->data 中
  */
 struct kretprobe {
 	struct kprobe kp;

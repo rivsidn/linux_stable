@@ -1417,6 +1417,7 @@ static int __kprobes pre_handler_kretprobe(struct kprobe *p,
 		ri->rp = rp;
 		ri->task = current;
 
+		/* 调用入口函数 */
 		if (rp->entry_handler && rp->entry_handler(ri, regs))
 			return 0;
 
@@ -1446,6 +1447,7 @@ int __kprobes register_kretprobe(struct kretprobe *rp)
 		if (!addr)
 			return -EINVAL;
 
+		/* 过滤黑名单 */
 		for (i = 0; kretprobe_blacklist[i].name != NULL; i++) {
 			if (kretprobe_blacklist[i].addr == addr)
 				return -EINVAL;
