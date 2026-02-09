@@ -1297,6 +1297,7 @@ static int ctnetlink_del_conntrack(struct net *net, struct sock *ctnl,
 	return 0;
 }
 
+/* 会话获取函数 */
 static int ctnetlink_get_conntrack(struct net *net, struct sock *ctnl,
 				   struct sk_buff *skb,
 				   const struct nlmsghdr *nlh,
@@ -1312,6 +1313,7 @@ static int ctnetlink_get_conntrack(struct net *net, struct sock *ctnl,
 	struct nf_conntrack_zone zone;
 	int err;
 
+	/* DUMP分支 */
 	if (nlh->nlmsg_flags & NLM_F_DUMP) {
 		struct netlink_dump_control c = {
 			.start = ctnetlink_start,

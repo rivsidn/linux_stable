@@ -15,6 +15,9 @@
  * This should be a per-architecture thing, to allow different
  * error and pointer decisions.
  */
+/*
+ * 内核虚拟地址的最后一页永远不会被访问到，可以作为出错时的指针地址使用.
+ */
 #define MAX_ERRNO	4095
 
 #ifndef __ASSEMBLY__

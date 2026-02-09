@@ -4796,6 +4796,7 @@ static void rtnetlink_rcv(struct sk_buff *skb)
 	netlink_rcv_skb(skb, &rtnetlink_rcv_msg);
 }
 
+/* 权限检查 */
 static int rtnetlink_bind(struct net *net, int group)
 {
 	switch (group) {

@@ -41,6 +41,40 @@ extern void netlink_table_ungrab(void);
 #define NL_CFG_F_NONROOT_SEND	(1 << 1)
 
 /* optional Netlink kernel configuration parameters */
+/*
+ * 成员: groups
+ * 类型: unsigned int
+ * 功能: 指定该 netlink 套接字支持的多播组数量
+ * ────────────────────────────────────────
+ * 成员: flags
+ * 类型: unsigned int
+ * 功能: 配置标志，如 NL_CFG_F_NONROOT_RECV（允许非 root
+ *   用户接收）、NL_CFG_F_NONROOT_SEND（允许非 root用户发送）
+ * ────────────────────────────────────────
+ * 成员: input
+ * 类型: 函数指针
+ * 功能: 接收回调函数，当用户空间发送消息到内核时被调用，
+ *       用于处理收到的sk_buff
+ * ────────────────────────────────────────
+ * 成员: cb_mutex
+ * 类型: struct mutex *
+ * 功能: 可选的互斥锁，用于保护 netlink dump
+ *       回调操作的并发访问
+ * ────────────────────────────────────────
+ * 成员: bind
+ * 类型: 函数指针
+ * 功能: 当用户空间进程绑定到某个多播组时调用，可用于权
+ *       限检查或资源分配
+ * ────────────────────────────────────────
+ * 成员: unbind
+ * 类型: 函数指针
+ * 功能: 当用户空间进程离开某个多播组时调用，用于清理资源
+ * ────────────────────────────────────────
+ * 成员: compare
+ * 类型: 函数指针
+ * 功能: 用于在多网络命名空间环境下比较和匹配
+ *   socket，决定消息应发送给哪个 socket
+ */
 struct netlink_kernel_cfg {
 	unsigned int	groups;
 	unsigned int	flags;
