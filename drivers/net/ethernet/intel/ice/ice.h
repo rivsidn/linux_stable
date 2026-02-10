@@ -146,6 +146,9 @@ enum ice_vsi_flags {
 	ICE_VSI_FLAG_NBITS		/* must be last */
 };
 
+/*
+ * VSI(Virtual Station Interface) 虚拟化接口.
+ */
 /* struct that defines a VSI, associated with a dev */
 struct ice_vsi {
 	struct net_device *netdev;

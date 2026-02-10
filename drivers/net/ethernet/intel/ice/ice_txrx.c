@@ -102,6 +102,79 @@ void ice_free_tx_ring(struct ice_ring *tx_ring)
  *
  * Returns true if there's any budget left (e.g. the clean is finished)
  */
+/*
+ * 发送结束之后回收资源.
+ *  1. struct ice_tx_desc - 发送描述符（硬件层）
+ *
+ *  定义位置: ice_lan_tx_rx.h:321-324
+ *
+ *  struct ice_tx_desc {
+ *      __le64 buf_addr;		// 数据缓冲区的物理地址
+ *      __le64 cmd_type_offset_bsz;	// 命令、类型、偏移和大小
+ *  };
+ *
+ *  功能说明:
+ *  - 硬件描述符: 这是网卡硬件直接读取的数据结构，存储在
+ *DMA 环形缓冲区中
+ *  - buf_addr: 指向要发送的数据包在物理内存中的地址（DMA
+ * 地址）
+ *  - cmd_type_offset_bsz: 打包了多个控制信息：
+ *    - 命令位（如 EOP 表示包结束、RS 表示请求状态回写）
+ *    - 描述符类型（数据描述符或上下文描述符）
+ *    - 数据偏移量
+ *    - 缓冲区大小
+ *  - 小端格式: __le64 表示小端字节序，与硬件通信的标准格
+ *式
+ *  - 大小: 16 字节（两个 64 位字段）
+ *
+ *  2. struct ice_tx_buf - 发送缓冲区元数据（软件层）
+ *
+ *  定义位置: ice_txrx.h:37-45
+ *
+ *  struct ice_tx_buf {
+ *      struct ice_tx_desc *next_to_watch;	// 指向需要监控的描述符
+ *      struct sk_buff *skb;			// 指向 socket buffer
+ *      unsigned int bytecount;			// 字节数
+ *      unsigned short gso_segs;		// GSO 分段数
+ *      u32 tx_flags;				// 发送标志
+ *      DEFINE_DMA_UNMAP_ADDR(dma);		// DMA 映射地址
+ *      DEFINE_DMA_UNMAP_LEN(len);		// DMA 映射长度
+ *  };
+ *
+ *  功能说明:
+ *  - 软件元数据: 驱动程序用来跟踪每个发送缓冲区状态的辅助结构
+ *  - next_to_watch: 指向对应的硬件描述符，用于检查发送是否完成
+ *  - skb: 指向 Linux 内核的 socket buffer，包含实际的数据包内容
+ *  - bytecount: 记录数据包的字节数，用于统计
+ *  - gso_segs: Generic Segmentation Offload 的分段数量
+ *  - tx_flags: 标志位（如 TSO、VLAN 标记等）
+ *  - dma/len: 用于在发送完成后解除 DMA 映射，释放资源
+ *
+ *  两者的关系
+ *
+ *  软件层                          硬件层
+ *  ┌─────────────────┐            ┌─────────────────┐
+ *  │  ice_tx_buf     │            │  ice_tx_desc    │
+ *  │  (元数据)       │            │  (硬件描述符)   │
+ *  ├─────────────────┤            ├─────────────────┤
+ *  │ next_to_watch ──┼───────────>│ buf_addr        │
+ *  │ skb             │            │ cmd_type_...    │
+ *  │ bytecount       │            └─────────────────┘
+ *  │ gso_segs        │                    │
+ *  │ tx_flags        │                    │ DMA
+ *  │ dma             │                    ↓
+ *  │ len             │            ┌─────────────────┐
+ *  └─────────────────┘            │  物理内存中的   │
+ *                                 │  数据包内容     │
+ *                                 └─────────────────┘
+ *
+ *  工作流程:
+ *  1. 发送时: 驱动填充 ice_tx_buf 记录 skb 信息，同时填充
+ *     ice_tx_desc 告诉硬件从哪里读取数据
+ *  2. 硬件处理: 网卡根据 ice_tx_desc 中的 buf_addr 通过DMA 读取数据并发送
+ *  3. 完成回收: 驱动通过 ice_tx_buf.next_to_watch 检查硬件是否完成，
+ *     然后释放 skb 和解除 DMA 映射
+ */
 static bool ice_clean_tx_irq(struct ice_vsi *vsi, struct ice_ring *tx_ring,
 			     int napi_budget)
 {
@@ -1050,6 +1123,82 @@ static int ice_clean_rx_irq(struct ice_ring *rx_ring, int budget)
 	/* guarantee a trip back through this routine if there was a failure */
 	return failure ? budget : (int)total_rx_pkts;
 }
+
+/*
+ *
+ *  1. struct ice_q_vector (ice.h:217-228)
+ *
+ *  功能：中断向量结构，用于处理网卡的中断和NAPI轮询。
+ *
+ *  - 包含 napi_struct napi 成员，用于Linux的NAPI机制（New API，用于高效处理网络数据包）
+ *  - 关联一个VSI（struct ice_vsi *vsi）
+ *  - 包含发送和接收ring容器（tx 和 rx）
+ *  - 管理CPU亲和性（affinity_mask）
+ *  - 记录该向量上的TX/RX ring数量
+ *
+ *  在代码中的作用：通过 container_of 宏从 napi_struct 反向获取包含它的 ice_q_vector 结构体。
+ *
+ *  ---
+ *  2. struct ice_vsi (ice.h:150-214)
+ *
+ *  功能：虚拟站点接口（Virtual Station Interface），是网卡的逻辑接口抽象。
+ *
+ *  - 关联网络设备（struct net_device *netdev）
+ *  - 包含RX/TX ring数组（rx_rings、tx_rings）
+ *  - 包含q_vector数组（q_vectors）
+ *  - 反向指针指向PF（struct ice_pf *back）
+ *  - 管理队列配置、RSS配置、统计信息等
+ *
+ *  在代码中的作用：从 q_vector->vsi 获取，代表当前处理的虚拟接口。
+ *
+ *  ---
+ *  3. struct ice_pf (ice.h:237-274)
+ *
+ *  功能：物理功能（Physical Function）结构，代表整个PCIe 物理网卡设备。
+ *
+ *  - 关联PCI设备（struct pci_dev *pdev）
+ *  - 管理所有VSI（struct ice_vsi **vsi）
+ *  - 管理MSI-X中断向量（msix_entries）
+ *  - 管理硬件资源（队列、中断等）
+ *  - 包含硬件抽象层（struct ice_hw hw）
+ *  - 管理全局状态和统计信息
+ *
+ *  在代码中的作用：从 vsi->back 获取，代表整个物理网卡设备。
+ *
+ *  ---
+ *  4. struct ice_ring (ice_txrx.h:116-160)
+ *
+ *  功能：收发队列环（Ring），是实际处理数据包的队列结构。
+ *
+ *  - 包含描述符环内存（void *desc）
+ *  - 反向指针指向VSI和q_vector
+ *  - 管理DMA映射（dma、dev）
+ *  - 包含TX/RX缓冲区（tx_buf 或 rx_buf）
+ *  - 维护队列索引（next_to_use、next_to_clean、next_to_alloc）
+ *  - 记录队列统计信息
+ *
+ *  在代码中的作用：声明一个ring指针，后续会遍历q_vector上的所有ring进行数据包处理。
+ *
+ *  ---
+ *  层次关系总结
+ *
+ *  ice_pf (物理网卡)
+ *    └── ice_vsi (虚拟接口)
+ *          ├── ice_q_vector (中断向量/NAPI)
+ *          │     └── ice_ring (收发队列)
+ *          └── ice_ring (多个收发队列)
+ *
+ *  数据流向：
+ *  1. 硬件中断触发 → ice_q_vector 的NAPI轮询
+ *  2. NAPI调用 ice_napi_poll 函数
+ *  3. 通过 container_of 获取 q_vector
+ *  4. 从 q_vector 获取 vsi（虚拟接口）
+ *  5. 从 vsi 获取 pf（物理设备）
+ *  6. 遍历 q_vector 上的所有 ring 进行数据包收发处理
+ *
+ *  这种设计允许一个物理网卡支持多个虚拟接口，每个接口有多个队列，
+ *  每个队列可以绑定到不同的CPU核心，实现高效的多队列并行处理。
+ */
 
 /**
  * ice_napi_poll - NAPI polling Rx/Tx cleanup routine

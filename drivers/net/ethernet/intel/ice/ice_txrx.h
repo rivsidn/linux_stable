@@ -34,6 +34,14 @@
 #define ICE_TX_FLAGS_VLAN_M	0xffff0000
 #define ICE_TX_FLAGS_VLAN_S	16
 
+/*
+ * 为什么叫 next_to_watch？
+ *
+ * 核心概念：不是每个描述符都需要监控
+ *
+ * 在发送队列中，一个数据包可能占用多个描述符（比如使用 scatter-gather DMA 时），
+ * 但驱动程序只需要监控最后一个描述符就能知道整个数据包是否发送完成。
+ */
 struct ice_tx_buf {
 	struct ice_tx_desc *next_to_watch;
 	struct sk_buff *skb;
@@ -112,6 +120,9 @@ enum ice_rx_dtype {
 #define ICE_TX_ADVANCED	0
 #define ICE_TX_LEGACY	1
 
+/*
+ * @next_to_clean:	下一个需要clean 的rx_buf(tx_buf)
+ */
 /* descriptor ring, associated with a VSI */
 struct ice_ring {
 	struct ice_ring *next;		/* pointer to next ring in q_vector */
