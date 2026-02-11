@@ -2951,6 +2951,7 @@ redo:
 	 * data is retrieved via this pointer. If we are on the same cpu
 	 * during the cmpxchg then the free will succeed.
 	 */
+	/* 获取对应CPU的kmem_cache_cpu{} 变量 */
 	do {
 		tid = this_cpu_read(s->cpu_slab->tid);
 		c = raw_cpu_ptr(s->cpu_slab);
@@ -2960,6 +2961,7 @@ redo:
 	/* Same with comment on barrier() in slab_alloc_node() */
 	barrier();
 
+	/* 当前页面 */
 	if (likely(page == c->page)) {
 		void **freelist = READ_ONCE(c->freelist);
 

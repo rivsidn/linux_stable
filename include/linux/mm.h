@@ -660,10 +660,15 @@ static inline int page_trans_huge_mapcount(struct page *page,
 }
 #endif
 
+/* 获取该页所属复合页的头页 */
 static inline struct page *virt_to_head_page(const void *x)
 {
 	struct page *page = virt_to_page(x);
 
+	/*
+	 * - Huge pages（2MB/1GB 大页）
+	 * - 高阶页分配（order > 0）
+	 */
 	return compound_head(page);
 }
 
