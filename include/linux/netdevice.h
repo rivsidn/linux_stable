@@ -562,6 +562,7 @@ enum netdev_queue_state_t {
  * netif_xmit*stopped functions, they should only be using netif_tx_*.
  */
 
+/* 网卡队列的软件表示 */
 struct netdev_queue {
 /*
  * read-mostly part

@@ -8583,6 +8583,7 @@ static int netif_alloc_netdev_queues(struct net_device *dev)
 	if (count < 1 || count > 0xffff)
 		return -EINVAL;
 
+	/* 申请并初始化发送队列 */
 	tx = kvzalloc(sz, GFP_KERNEL | __GFP_RETRY_MAYFAIL);
 	if (!tx)
 		return -ENOMEM;
