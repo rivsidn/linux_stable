@@ -37,6 +37,7 @@ ice_unmap_and_free_tx_buf(struct ice_ring *ring, struct ice_tx_buf *tx_buf)
 	/* tx_buf must be completely set up in the transmit path */
 }
 
+/* netdev_queue{}、ice_ring{} 之间存在一一对应关系 */
 static struct netdev_queue *txring_txq(const struct ice_ring *ring)
 {
 	return netdev_get_tx_queue(ring->netdev, ring->q_index);
@@ -1920,6 +1921,7 @@ netdev_tx_t ice_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	struct ice_vsi *vsi = np->vsi;
 	struct ice_ring *tx_ring;
 
+	/* 获取对应的发送队列 */
 	tx_ring = vsi->tx_rings[skb->queue_mapping];
 
 	/* hardware can't handle really short frames, hardware padding works

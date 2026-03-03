@@ -203,7 +203,14 @@ struct ice_vsi {
 	u8 current_isup;		 /* Sync 'link up' logging */
 	u8 stat_offsets_loaded;
 
-	/* queue information */
+	/*
+	 * queue information(队列信息)
+	 *
+	 * @alloc_txq:	发送队列数量
+	 * @num_txq:	使用的发送队列
+	 * @alloc_rxq:	接收队列数量
+	 * @num_rxq:	使用的接收队列
+	 */
 	u8 tx_mapping_mode;		 /* ICE_MAP_MODE_[CONTIG|SCATTER] */
 	u8 rx_mapping_mode;		 /* ICE_MAP_MODE_[CONTIG|SCATTER] */
 	u16 txq_map[ICE_MAX_TXQS];	 /* index in pf->avail_txqs */

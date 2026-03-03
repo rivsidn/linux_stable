@@ -744,6 +744,23 @@ struct xps_map {
 /*
  * This structure holds all XPS maps for device.  Maps are indexed by CPU.
  */
+/*
+ * net_device
+ * ├── xps_cpus_map (xps_dev_maps)
+ * │   ├── attr_map[0] → xps_map	(CPU 0 的队列映射)
+ * │   │   └── queues[] = {2, 3}	// CPU 0 可以使用TX 队列 2 和 3
+ * │   ├── attr_map[1] → xps_map	(CPU 1 的队列映射)
+ * │   │   └── queues[] = {4, 5}	// CPU 1 可以使用TX 队列 4 和 5
+ * │   └── ...
+ * └── xps_rxqs_map (xps_dev_maps)
+ *     ├── attr_map[0] → xps_map	(RX队列 0 的映射)
+ *     │   └── queues[] = {0}		// RX队列 0 对应TX 队列 0
+ *     ├── attr_map[1] → xps_map	(RX队列 1 的映射)
+ *     │   └── queues[] = {1}		// RX队列 1 对应TX 队列 1
+ *     └── ...
+ *
+ * 设备之间的映射关系.
+ */
 struct xps_dev_maps {
 	struct rcu_head rcu;
 	struct xps_map __rcu *attr_map[0]; /* Either CPUs map or RXQs map */
@@ -1922,6 +1939,7 @@ struct net_device {
 #ifdef CONFIG_NET_CLS_ACT
 	struct mini_Qdisc __rcu	*miniq_ingress;
 #endif
+	/* 入流量队列 */
 	struct netdev_queue __rcu *ingress_queue;
 #ifdef CONFIG_NETFILTER_INGRESS
 	struct nf_hook_entries __rcu *nf_hooks_ingress;

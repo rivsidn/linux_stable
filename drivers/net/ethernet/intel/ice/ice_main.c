@@ -1840,6 +1840,7 @@ static void ice_vsi_map_rings_to_vectors(struct ice_vsi *vsi)
 	tx_rings_rem = vsi->num_txq;
 	rx_rings_rem = vsi->num_rxq;
 
+	/* 建立中断向量和ice_ring{} 的映射 */
 	for (v_id = 0; v_id < q_vectors; v_id++) {
 		struct ice_q_vector *q_vector = vsi->q_vectors[v_id];
 		int tx_rings_per_v, rx_rings_per_v, q_id, q_base;
@@ -2328,6 +2329,7 @@ static int ice_cfg_netdev(struct ice_vsi *vsi)
 	struct net_device *netdev;
 	u8 mac_addr[ETH_ALEN];
 
+	/* 申请net_device{} 结构体 */
 	netdev = alloc_etherdev_mqs(sizeof(struct ice_netdev_priv),
 				    vsi->alloc_txq, vsi->alloc_rxq);
 	if (!netdev)

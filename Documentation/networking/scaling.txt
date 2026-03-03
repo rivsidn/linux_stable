@@ -40,10 +40,14 @@ by masking out the low order seven bits of the computed hash for the
 packet (usually a Toeplitz hash), taking this number as a key into the
 indirection table and reading the corresponding value.
 
+获取到队列.
+
 Some advanced NICs allow steering packets to queues based on
 programmable filters. For example, webserver bound TCP port 80 packets
 can be directed to their own receive queue. Such “n-tuple” filters can
 be configured from ethtool (--config-ntuple).
+
+有些高级的网卡支持可编程过滤器.
 
 ==== RSS Configuration
 
@@ -370,6 +374,9 @@ device. This can be accomplished by recording two kinds of maps, either
 a mapping of CPU to hardware queue(s) or a mapping of receive queue(s)
 to hardware transmit queue(s).
 
+CPU -> 硬件队列的映射;
+接收队列 -> 发送队列的映射.
+
 1. XPS using CPUs map
 
 The goal of this mapping is usually to assign queues
@@ -381,6 +388,8 @@ significantly reduced since fewer CPUs contend for the same queue
 transmit queue). Secondly, cache miss rate on transmit completion is
 reduced, in particular for data cache lines that hold the sk_buff
 structures.
+
+降低锁竞争; 降低cache miss.
 
 2. XPS using receive queues map
 
@@ -437,10 +446,10 @@ default for SMP). The functionality remains disabled until explicitly
 configured. To enable XPS, the bitmap of CPUs/receive-queues that may
 use a transmit queue is configured using the sysfs file entry:
 
-For selection based on CPUs map:
+For selection based on CPUs map(基于CPU映射):
 /sys/class/net/<dev>/queues/tx-<n>/xps_cpus
 
-For selection based on receive-queues map:
+For selection based on receive-queues map(基于接收队列映射):
 /sys/class/net/<dev>/queues/tx-<n>/xps_rxqs
 
 == Suggested Configuration
@@ -459,6 +468,7 @@ For transmit queue selection based on receive queue(s), XPS has to be
 explicitly configured mapping receive-queue(s) to transmit queue(s). If the
 user configuration for receive-queue map does not apply, then the transmit
 queue is selected based on the CPUs map.
+
 
 Per TX Queue rate limitation:
 =============================

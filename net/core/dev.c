@@ -3596,6 +3596,7 @@ sch_handle_egress(struct sk_buff *skb, int *ret, struct net_device *dev)
 #endif /* CONFIG_NET_EGRESS */
 
 #ifdef CONFIG_XPS
+/* 获取映射关系 */
 static int __get_xps_queue_idx(struct net_device *dev, struct sk_buff *skb,
 			       struct xps_dev_maps *dev_maps, unsigned int tci)
 {
@@ -3636,6 +3637,7 @@ static int get_xps_queue(struct net_device *dev, struct net_device *sb_dev,
 	if (!static_key_false(&xps_rxqs_needed))
 		goto get_cpus_map;
 
+	/* rxqs 映射 */
 	dev_maps = rcu_dereference(sb_dev->xps_rxqs_map);
 	if (dev_maps) {
 		int tci = sk_rx_queue_get(sk);
@@ -3645,6 +3647,7 @@ static int get_xps_queue(struct net_device *dev, struct net_device *sb_dev,
 							  tci);
 	}
 
+	/* cpus 映射 */
 get_cpus_map:
 	if (queue_index < 0) {
 		dev_maps = rcu_dereference(sb_dev->xps_cpus_map);

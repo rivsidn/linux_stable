@@ -3992,6 +3992,7 @@ static inline bool skb_irq_freeable(const struct sk_buff *skb)
 
 static inline void skb_set_queue_mapping(struct sk_buff *skb, u16 queue_mapping)
 {
+	/* 发送时会根据这个值获取发送队列 */
 	skb->queue_mapping = queue_mapping;
 }
 
