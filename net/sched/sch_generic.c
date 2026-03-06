@@ -646,6 +646,7 @@ static int pfifo_fast_enqueue(struct sk_buff *skb, struct Qdisc *qdisc,
 	unsigned int pkt_len = qdisc_pkt_len(skb);
 	int err;
 
+	/* 添加skb 到队列中 */
 	err = skb_array_produce(q, skb);
 
 	if (unlikely(err))

@@ -3259,6 +3259,7 @@ static int xmit_one(struct sk_buff *skb, struct net_device *dev,
 	return rc;
 }
 
+/* 处理发送队列 */
 struct sk_buff *dev_hard_start_xmit(struct sk_buff *first, struct net_device *dev,
 				    struct netdev_queue *txq, int *ret)
 {
@@ -3622,6 +3623,7 @@ static int __get_xps_queue_idx(struct net_device *dev, struct sk_buff *skb,
 }
 #endif
 
+/* 通过XPS 获取队列 */
 static int get_xps_queue(struct net_device *dev, struct net_device *sb_dev,
 			 struct sk_buff *skb)
 {
@@ -3721,6 +3723,7 @@ struct netdev_queue *netdev_pick_tx(struct net_device *dev,
 		skb->sender_cpu = raw_smp_processor_id() + 1;
 #endif
 
+	/* 获取发送队列 */
 	if (dev->real_num_tx_queues != 1) {
 		const struct net_device_ops *ops = dev->netdev_ops;
 
@@ -3802,6 +3805,7 @@ static int __dev_queue_xmit(struct sk_buff *skb, struct net_device *sb_dev)
 	else
 		skb_dst_force(skb);
 
+	/* 获取发送队列 */
 	txq = netdev_pick_tx(dev, skb, sb_dev);
 	q = rcu_dereference_bh(txq->qdisc);
 
@@ -3875,6 +3879,7 @@ int dev_queue_xmit(struct sk_buff *skb)
 }
 EXPORT_SYMBOL(dev_queue_xmit);
 
+/* 带有硬件加速设备发送 */
 int dev_queue_xmit_accel(struct sk_buff *skb, struct net_device *sb_dev)
 {
 	return __dev_queue_xmit(skb, sb_dev);

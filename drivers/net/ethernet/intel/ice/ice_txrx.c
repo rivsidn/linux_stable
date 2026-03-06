@@ -1212,6 +1212,7 @@ static int ice_clean_rx_irq(struct ice_ring *rx_ring, int budget)
  */
 int ice_napi_poll(struct napi_struct *napi, int budget)
 {
+	/* 中断向量 */
 	struct ice_q_vector *q_vector =
 				container_of(napi, struct ice_q_vector, napi);
 	struct ice_vsi *vsi = q_vector->vsi;
