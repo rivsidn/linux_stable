@@ -563,6 +563,10 @@ enum netdev_queue_state_t {
  */
 
 /* 网卡队列的软件表示 */
+/*
+ * netdev_queue 是内核对设备 TX 队列的管理对象，通常对应一个硬件/驱动 TX 通道；
+ * 而真正的软件报文排队通常由该对象关联的 txq->qdisc 完成。
+ */
 struct netdev_queue {
 /*
  * read-mostly part

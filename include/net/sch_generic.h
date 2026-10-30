@@ -54,11 +54,29 @@ struct qdisc_skb_head {
 	spinlock_t	lock;
 };
 
+/**
+ * struct Qdisc - 流量控制队列规则的通用运行时状态
+ *
+ * Qdisc 位于网络协议栈和设备发送队列之间。报文通过 @enqueue 入队，
+ * 通过 @dequeue 选择下一个待发送报文。这两个回调实现数据面的排队、
+ * 排序、整形、分类以及必要时的丢包策略。
+ *
+ * 本结构是所有 Qdisc 实例的通用基类，不包含特定算法的全部状态。算法私有
+ * 状态分配在本结构之后的存储区中，其大小由 @ops->priv_size 指定。
+ */
+/*
+ * Qdisc 和 netdev_queue 不是严格的一一对应，但在“实际发送路径”上很接近。
+ * 一个 netdev_queue 在某一时刻有一个用于发送的活跃根 Qdisc；但一个完整的 Qdisc 配置可以是树，
+ * 也可以跨越多个 TX 队列。
+ */
 struct Qdisc {
+	/* 快速路径上的报文入队和选择回调。 */
 	int 			(*enqueue)(struct sk_buff *skb,
 					   struct Qdisc *sch,
 					   struct sk_buff **to_free);
 	struct sk_buff *	(*dequeue)(struct Qdisc *sch);
+
+	/* 实例能力和运行模式，包括硬件卸载。 */
 	unsigned int		flags;
 #define TCQ_F_BUILTIN		1
 #define TCQ_F_INGRESS		2
@@ -79,15 +97,20 @@ struct Qdisc {
 #define TCQ_F_INVISIBLE		0x80 /* invisible by default in dump */
 #define TCQ_F_NOLOCK		0x100 /* qdisc does not require locking */
 #define TCQ_F_OFFLOADED		0x200 /* qdisc is offloaded to HW */
+	/* 队列上限和该 Qdisc 类型的控制面操作。 */
 	u32			limit;
 	const struct Qdisc_ops	*ops;
 	struct qdisc_size_table	__rcu *stab;
 	struct hlist_node       hash;
+
+	/* TC 对象标识及其在 Qdisc/class 层级中的位置。 */
 	u32			handle;
 	u32			parent;
 
+	/* 该 Qdisc 服务的设备发送队列。 */
 	struct netdev_queue	*dev_queue;
 
+	/* 可选速率估算器、每 CPU 统计信息和生命周期引用计数。 */
 	struct net_rate_estimator __rcu *rate_est;
 	struct gnet_stats_basic_cpu __percpu *cpu_bstats;
 	struct gnet_stats_queue	__percpu *cpu_qstats;
@@ -97,8 +120,10 @@ struct Qdisc {
 	/*
 	 * For performance sake on SMP, we put highly modified fields at the end
 	 */
+	/* 延迟处理的 GSO 报文，以及简单 Qdisc 使用的通用 skb 队列。 */
 	struct sk_buff_head	gso_skb ____cacheline_aligned_in_smp;
 	struct qdisc_skb_head	q;
+	/* 本实例的聚合统计信息和调度状态。 */
 	struct gnet_stats_basic_packed bstats;
 	seqcount_t		running;
 	struct gnet_stats_queue	qstats;
@@ -106,6 +131,7 @@ struct Qdisc {
 	struct Qdisc            *next_sched;
 	struct sk_buff_head	skb_bad_txq;
 
+	/* 串行化出队和调度路径，以及无锁 Qdisc 的执行。 */
 	spinlock_t		busylock ____cacheline_aligned_in_smp;
 	spinlock_t		seqlock;
 };

@@ -3723,7 +3723,6 @@ struct netdev_queue *netdev_pick_tx(struct net_device *dev,
 		skb->sender_cpu = raw_smp_processor_id() + 1;
 #endif
 
-	/* 获取发送队列 */
 	if (dev->real_num_tx_queues != 1) {
 		const struct net_device_ops *ops = dev->netdev_ops;
 
