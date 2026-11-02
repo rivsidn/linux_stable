@@ -964,6 +964,7 @@ static int qdisc_graft(struct net_device *dev, struct Qdisc *parent,
 		if (new && new->ops->attach)
 			goto skip;
 
+		/* 遍历所有的TX 队列 */
 		for (i = 0; i < num_q; i++) {
 			struct netdev_queue *dev_queue = dev_ingress_queue(dev);
 

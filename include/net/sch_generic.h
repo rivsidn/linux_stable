@@ -220,6 +220,7 @@ struct Qdisc_class_ops {
 					struct gnet_dump *);
 };
 
+/* Qdisc 算法结构体 */
 struct Qdisc_ops {
 	struct Qdisc_ops	*next;
 	const struct Qdisc_class_ops	*cl_ops;
