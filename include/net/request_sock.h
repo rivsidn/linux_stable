@@ -45,7 +45,11 @@ struct request_sock_ops {
 
 int inet_rtx_syn_ack(const struct sock *parent, struct request_sock *req);
 
-/* struct request_sock - mini sock to represent a connection request
+/*
+ * struct request_sock - mini sock to represent a connection request
+ */
+/*
+ * "尚未完成三次握手的入站连接" 创建的轻量对象，也常被称为半连接或 SYN-RECV 请求对象
  */
 struct request_sock {
 	struct sock_common		__req_common;
