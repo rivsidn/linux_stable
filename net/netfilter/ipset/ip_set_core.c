@@ -29,6 +29,9 @@ static LIST_HEAD(ip_set_type_list);		/* all registered set types */
 static DEFINE_MUTEX(ip_set_type_mutex);		/* protects ip_set_type_list */
 static DEFINE_RWLOCK(ip_set_ref_lock);		/* protects the set refs */
 
+/*
+ *	@ip_set_max: 当前数组的最大值
+ */
 struct ip_set_net {
 	struct ip_set * __rcu *ip_set_list;	/* all individual sets */
 	ip_set_id_t	ip_set_max;	/* max number of sets */
@@ -1574,6 +1577,7 @@ static int ip_set_uadd(struct net *net, struct sock *ctnl, struct sk_buff *skb,
 		       !attr[IPSET_ATTR_LINENO]))))
 		return -IPSET_ERR_PROTOCOL;
 
+	/* 查找ipset */
 	set = find_set(inst, nla_data(attr[IPSET_ATTR_SETNAME]));
 	if (!set)
 		return -ENOENT;
@@ -1856,7 +1860,7 @@ static const struct nfnl_callback ip_set_netlink_subsys_cb[IPSET_MSG_MAX] = {
 		.attr_count	= IPSET_ATTR_CMD_MAX,
 	},
 	[IPSET_CMD_CREATE]	= {
-		.call		= ip_set_create,
+		.call		= ip_set_create,	// 创建ipset
 		.attr_count	= IPSET_ATTR_CMD_MAX,
 		.policy		= ip_set_create_policy,
 	},
@@ -1891,7 +1895,7 @@ static const struct nfnl_callback ip_set_netlink_subsys_cb[IPSET_MSG_MAX] = {
 		.policy		= ip_set_setname_policy,
 	},
 	[IPSET_CMD_ADD]	= {
-		.call		= ip_set_uadd,
+		.call		= ip_set_uadd,		//添加ipset entry
 		.attr_count	= IPSET_ATTR_CMD_MAX,
 		.policy		= ip_set_adt_policy,
 	},

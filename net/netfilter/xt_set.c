@@ -224,8 +224,10 @@ set_target_v0(struct sk_buff *skb, const struct xt_action_param *par)
 		info->del_set.u.compat.flags, 0, UINT_MAX,
 		0, 0, 0, 0);
 
+	/* 是否执行添加操作 */
 	if (info->add_set.index != IPSET_INVALID_ID)
 		ip_set_add(info->add_set.index, skb, par, &add_opt);
+	/* 是否执行删除操作 */
 	if (info->del_set.index != IPSET_INVALID_ID)
 		ip_set_del(info->del_set.index, skb, par, &del_opt);
 

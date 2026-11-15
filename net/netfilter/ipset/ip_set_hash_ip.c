@@ -281,7 +281,7 @@ static struct ip_set_type hash_ip_type __read_mostly = {
 	.family		= NFPROTO_UNSPEC,
 	.revision_min	= IPSET_TYPE_REV_MIN,
 	.revision_max	= IPSET_TYPE_REV_MAX,
-	.create		= hash_ip_create,
+	.create		= hash_ip_create,	//IPSET_TOKEN 定义
 	.create_policy	= {
 		[IPSET_ATTR_HASHSIZE]	= { .type = NLA_U32 },
 		[IPSET_ATTR_MAXELEM]	= { .type = NLA_U32 },
